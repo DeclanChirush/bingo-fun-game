@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import type { GameState, CardState } from '../utils/multiplayerTypes';
 import { generateCard, applyNumber, isFullBingo } from '../utils/gameLogic';
 import BingoCard from './BingoCard';
@@ -8,8 +8,6 @@ import QuitModal from './QuitModal';
 import Confetti from './Confetti';
 import { playMark, playWin, resumeAudio } from '../utils/sounds';
 import './GameScreen.css';
-
-const TOTAL_ROUNDS = 10;
 
 interface Props {
   myId: string;
@@ -25,12 +23,14 @@ interface Props {
   onStartGame?: () => void;
   onNextRound?: () => void;
   onResetGame?: () => void;
+  totalRounds?: number;           // ← add this
+  onSetTotalRounds?: (n: number) => void;  // ← add this
 }
 
 export default function GameScreen({
   myId, playerName, roomCode, isHost, gameState, soundEnabled,
   onToggleSound, onQuit, onCallNumber, onClaimBingo,
-  onStartGame, onNextRound, onResetGame,
+  onStartGame, onNextRound, onResetGame, totalRounds = 5, onSetTotalRounds,
 }: Props) {
   const [card, setCard] = useState<CardState>(() => generateCard());
   const [showQuit, setShowQuit] = useState(false);
@@ -40,6 +40,7 @@ export default function GameScreen({
   const [toast, setToast] = useState<string | null>(null);
   const prevPhaseRef = useRef(gameState.phase);
   const prevCalledRef = useRef<number[]>([]);
+  const claimedRef = useRef(false);
 
   const { phase, round, players, callerOrder, callerIndex, calledNumbers, roundWinner } = gameState;
 
@@ -51,14 +52,20 @@ export default function GameScreen({
   const me = players.find(p => p.id === myId);
   const roundWinnerName = players.find(p => p.id === roundWinner)?.name ?? '';
   const iWon = roundWinner === myId;
+  // Replace direct isFullBingo(card) calls with:
+  const hasWon = useMemo(() => isFullBingo(card), [card]);
 
   // Reset card on new round
   useEffect(() => {
     if (phase === 'playing' && prevPhaseRef.current !== 'playing') {
-      setCard(generateCard());
-      setWonRound(false);
-      setConfetti(false);
-      prevCalledRef.current = [];
+        claimedRef.current = false; // ← add this
+        // Only regenerate if coming from round_end (new round), NOT from lobby
+        if (prevPhaseRef.current === 'round_end') {
+          setCard(generateCard());
+        }
+        setWonRound(false);
+        setConfetti(false);
+        prevCalledRef.current = [];
     }
     prevPhaseRef.current = phase;
   }, [phase]);
@@ -76,16 +83,17 @@ export default function GameScreen({
     });
   }, [calledNumbers]);
 
-  // Detect win
+  // In the win detection useEffect, add the ref guard:
   useEffect(() => {
-    if (wonRound || phase !== 'playing') return;
-    if (isFullBingo(card)) {
+    if (wonRound || phase !== 'playing' || claimedRef.current) return;
+    if (hasWon) {
+      claimedRef.current = true; // ← add this
       setWonRound(true);
       setConfetti(true);
       onClaimBingo();
       if (soundEnabled) setTimeout(() => playWin(), 200);
     }
-  }, [card, wonRound, phase, onClaimBingo, soundEnabled]);
+  }, [card, wonRound, phase, onClaimBingo, soundEnabled, hasWon]);
 
   // Confetti for round/game winners
   useEffect(() => {
@@ -145,9 +153,9 @@ export default function GameScreen({
       {/* ── Round bar ── */}
       {phase !== 'lobby' && phase !== 'game_over' && (
         <div className="round-bar">
-          <span className="round-label">Round {round} of {TOTAL_ROUNDS}</span>
+          <span className="round-label">Round {round} of {gameState.totalRounds}</span>
           <div className="round-pips">
-            {Array.from({ length: TOTAL_ROUNDS }, (_, i) => (
+            {Array.from({ length: gameState.totalRounds }, (_, i) => (
               <div key={i} className={`pip ${i < round - 1 ? 'done' : i === round - 1 ? 'current' : ''}`} />
             ))}
           </div>
@@ -174,6 +182,22 @@ export default function GameScreen({
                 onRefresh={handleRefreshCard}
               />
             </div>
+            {isHost && (
+              <div className="rounds-selector">
+                <span className="rounds-label">Rounds</span>
+                <div className="rounds-btns">
+                  {[3, 5, 10, 15].map(n => (
+                    <button
+                      key={n}
+                      className={`btn btn-ghost btn-sm ${totalRounds === n ? 'active' : ''}`}
+                      onClick={() => onSetTotalRounds?.(n)}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {isHost ? (
               <button className="btn btn-primary btn-large" onClick={onStartGame} disabled={players.length < 1}>
                 🚀 Start Game ({players.length} player{players.length !== 1 ? 's' : ''})
@@ -263,9 +287,9 @@ export default function GameScreen({
                 </div>
               ))}
             </div>
-            {isHost && round <= TOTAL_ROUNDS ? (
+            {isHost && round <= gameState.totalRounds ? (
               <button className="btn btn-primary btn-large" onClick={onNextRound}>
-                ▶ Next Round ({round}/{TOTAL_ROUNDS})
+                ▶ Next Round ({round}/{gameState.totalRounds})
               </button>
             ) : !isHost ? (
               <p className="waiting-text">⏳ Waiting for host…</p>
@@ -280,7 +304,7 @@ export default function GameScreen({
           <div className="phase-card">
             <div className="phase-emoji bounce">🎊</div>
             <h2 className="game-over-title">Game Over!</h2>
-            <p className="phase-sub">Final Scoreboard — {TOTAL_ROUNDS} Rounds</p>
+            <p className="phase-sub">Final Scoreboard — {gameState.totalRounds} Rounds</p>
             <div className="scores-list final">
               {[...players].sort((a,b) => b.score - a.score).map((p, i) => (
                 <div key={p.id} className={`score-row final-row rank-${i+1} ${p.id === myId ? 'me' : ''}`}>

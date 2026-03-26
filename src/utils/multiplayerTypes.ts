@@ -36,6 +36,7 @@ export interface GameState {
   shuffledPool: number[]; // 1-25 shuffled for this round
   roundWinner: string | null; // playerId
   locked: boolean;        // no new joins once started
+  totalRounds: number; // rounds
 }
 
 // ── Messages ─────────────────────────────────────────────────
