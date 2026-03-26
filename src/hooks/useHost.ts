@@ -47,7 +47,6 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   const [gameState, setGameState] = useState<GameState | null>(null);
 
   const claimProcessedRef = useRef(false);
-  // BUG FIX: prevent double-firing of nextRound
   const nextRoundInProgressRef = useRef(false);
   const peerRef = useRef<Peer | null>(null);
   const connsRef = useRef<Map<string, DataConnection>>(new Map());
@@ -74,7 +73,7 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   // ── Start round ─────────────────────────────────────────────
   const startRound = useCallback((gs: GameState) => {
     claimProcessedRef.current = false;
-    nextRoundInProgressRef.current = false; // BUG FIX: reset lock after round starts
+    nextRoundInProgressRef.current = false;
     const pool = generatePool();
     const playerIds = gs.players.map(p => p.id);
     const callerOrder = buildCallerOrder(playerIds, gs.round);
@@ -122,14 +121,11 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     const scores: Record<string, number> = {};
     gs.players.forEach(p => { scores[p.id] = p.score + (p.id === playerId ? 1 : 0); });
 
-    // BUG FIX: do NOT increment round here. Keep round as-is for round_end display.
-    // nextRound() will increment it when the host explicitly clicks the button.
     const isGameOver = gs.round >= gs.totalRounds;
 
     const next: GameState = {
       ...gs,
       phase: isGameOver ? 'game_over' : 'round_end',
-      // BUG FIX: round stays the same — do NOT do gs.round + 1 here
       round: gs.round,
       roundWinner: playerId,
       players: gs.players.map(p => ({ ...p, score: p.id === playerId ? p.score + 1 : p.score })),
@@ -145,7 +141,15 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   }, [broadcast]);
 
   // ── Handle peer messages ─────────────────────────────────────
-  const handlePeerMsg = useCallback((conn: DataConnection, msg: PeerMsg) => {
+  // FIX: Store the handler in a ref so the connection's 'data' listener
+  // (registered once on connect) always calls the LATEST version.
+  // Previously, conn.on('data', handlePeerMsg) captured a stale closure,
+  // meaning callNumber / processBingoClaim seen by peer messages were the
+  // original ones from mount — so nextRound appeared broken until a player
+  // left (which triggered a re-render and accidentally refreshed the closure).
+  const handlePeerMsgRef = useRef<(conn: DataConnection, msg: PeerMsg) => void>(() => {});
+
+  handlePeerMsgRef.current = (conn: DataConnection, msg: PeerMsg) => {
     if (msg.type === 'JOIN_REQUEST') {
       const gs = gsRef.current;
       if (gs?.locked || (gs?.phase !== 'lobby' && gs?.phase !== undefined)) {
@@ -174,7 +178,7 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     if (msg.type === 'CLAIM_BINGO') {
       processBingoClaim(msg.payload.playerId, msg.payload.playerName);
     }
-  }, [broadcast, callNumber, processBingoClaim, updateGS]);
+  };
 
   // ── Host actions ─────────────────────────────────────────────
   const hostCallNumber = useCallback((num: number) => {
@@ -200,13 +204,11 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   }, [startRound]);
 
   const nextRound = useCallback(() => {
-    // BUG FIX: debounce/lock to prevent double-fire
     if (nextRoundInProgressRef.current) return;
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'round_end') return;
     nextRoundInProgressRef.current = true;
 
-    // BUG FIX: increment round here (not in processBingoClaim)
     const nextGs: GameState = { ...gs, round: gs.round + 1 };
     gsRef.current = nextGs;
     startRound(nextGs);
@@ -244,7 +246,8 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
 
     peer.on('connection', conn => {
       conn.on('open', () => connsRef.current.set(conn.peer, conn));
-      conn.on('data', data => handlePeerMsg(conn, data as PeerMsg));
+      // FIX: use the ref so the listener always dispatches to the latest handler
+      conn.on('data', data => handlePeerMsgRef.current(conn, data as PeerMsg));
       conn.on('close', () => {
         connsRef.current.delete(conn.peer);
         updateGS(prev => {
