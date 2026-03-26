@@ -68,6 +68,7 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
         setGameState(prev => prev ? {
           ...prev,
           phase: 'round_end',
+          // BUG FIX: round stays the same (host no longer increments it in ROUND_WON)
           roundWinner: msg.payload.winnerId,
           players: prev.players.map(p => ({
             ...p,
@@ -118,8 +119,8 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
   }, [send]);
 
   const claimBingo = useCallback(() => {
-    if (claimedRef.current) return; // ← add guard
-    claimedRef.current = true;      // ← mark immediately
+    if (claimedRef.current) return;
+    claimedRef.current = true;
     resumeAudio();
     send({ type: 'CLAIM_BINGO', payload: { playerId: peerRef.current?.id ?? '', playerName } });
   }, [send, playerName]);
@@ -131,7 +132,7 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
     peer.on('open', (id) => {
       setMyId(id);
       const hostPeerId = roomCodeToPeerId(roomCode.toUpperCase().trim());
-      const conn = peer.connect(hostPeerId, {reliable: true,serialization: 'json'});
+      const conn = peer.connect(hostPeerId, { reliable: true, serialization: 'json' });
       connRef.current = conn;
 
       conn.on('open', () => {

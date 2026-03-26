@@ -47,6 +47,8 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   const [gameState, setGameState] = useState<GameState | null>(null);
 
   const claimProcessedRef = useRef(false);
+  // BUG FIX: prevent double-firing of nextRound
+  const nextRoundInProgressRef = useRef(false);
   const peerRef = useRef<Peer | null>(null);
   const connsRef = useRef<Map<string, DataConnection>>(new Map());
   const gsRef = useRef<GameState | null>(null);
@@ -72,6 +74,7 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   // ── Start round ─────────────────────────────────────────────
   const startRound = useCallback((gs: GameState) => {
     claimProcessedRef.current = false;
+    nextRoundInProgressRef.current = false; // BUG FIX: reset lock after round starts
     const pool = generatePool();
     const playerIds = gs.players.map(p => p.id);
     const callerOrder = buildCallerOrder(playerIds, gs.round);
@@ -91,25 +94,7 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     broadcast({ type: 'ROUND_STARTED', payload: { round: next.round, callerOrder, shuffledPool: pool } });
   }, [broadcast]);
 
-  // ── Call a number (host or relayed from peer) ────────────────
-  // const callNumber = useCallback((num: number) => {
-  //   const gs = gsRef.current;
-  //   if (!gs || gs.phase !== 'playing') return;
-  //   const caller = gs.callerOrder[gs.callerIndex];
-  //   const hostId = peerRef.current?.id ?? '';
-  //   // Only the current caller can call (host enforces)
-  //   if (caller !== hostId && caller !== num.toString()) {
-  //     // relayed call is already validated by caller check upstream
-  //   }
-
-  //   const calledNumbers = [num, ...gs.calledNumbers];
-  //   const nextCallerIndex = (gs.callerIndex + 1) % gs.callerOrder.length;
-
-  //   updateGS(prev => ({ ...prev!, calledNumbers, callerIndex: nextCallerIndex }));
-  //   broadcast({ type: 'NUMBER_CALLED', payload: { number: num, calledNumbers, nextCallerIndex } });
-  //   if (soundRef.current) playDraw();
-  // }, [broadcast, updateGS]);
-
+  // ── Call a number ────────────────────────────────────────────
   const callNumber = useCallback((num: number) => {
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'playing') return;
@@ -117,13 +102,11 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     const calledNumbers = [num, ...gs.calledNumbers];
     const nextCallerIndex = (gs.callerIndex + 1) % gs.callerOrder.length;
 
-    // Broadcast FIRST before local state update — peers get it sooner
     broadcast({
       type: 'NUMBER_CALLED',
       payload: { number: num, calledNumbers, nextCallerIndex },
     });
 
-    // Then update local state
     updateGS(prev => ({ ...prev!, calledNumbers, callerIndex: nextCallerIndex }));
 
     if (soundRef.current) playDraw();
@@ -139,13 +122,15 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     const scores: Record<string, number> = {};
     gs.players.forEach(p => { scores[p.id] = p.score + (p.id === playerId ? 1 : 0); });
 
-    const nextRound = gs.round + 1;
-    const isGameOver = nextRound > gs.totalRounds;
+    // BUG FIX: do NOT increment round here. Keep round as-is for round_end display.
+    // nextRound() will increment it when the host explicitly clicks the button.
+    const isGameOver = gs.round >= gs.totalRounds;
 
     const next: GameState = {
       ...gs,
       phase: isGameOver ? 'game_over' : 'round_end',
-      round: isGameOver ? gs.round : nextRound,
+      // BUG FIX: round stays the same — do NOT do gs.round + 1 here
+      round: gs.round,
       roundWinner: playerId,
       players: gs.players.map(p => ({ ...p, score: p.id === playerId ? p.score + 1 : p.score })),
     };
@@ -181,8 +166,8 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
       const gs = gsRef.current;
       if (!gs || gs.phase !== 'playing') return;
       const currentCaller = gs.callerOrder[gs.callerIndex];
-      if (currentCaller !== msg.payload.callerId) return; // not their turn
-      if (gs.calledNumbers.includes(msg.payload.number)) return; // already called
+      if (currentCaller !== msg.payload.callerId) return;
+      if (gs.calledNumbers.includes(msg.payload.number)) return;
       callNumber(msg.payload.number);
     }
 
@@ -215,9 +200,16 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   }, [startRound]);
 
   const nextRound = useCallback(() => {
+    // BUG FIX: debounce/lock to prevent double-fire
+    if (nextRoundInProgressRef.current) return;
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'round_end') return;
-    startRound(gs);
+    nextRoundInProgressRef.current = true;
+
+    // BUG FIX: increment round here (not in processBingoClaim)
+    const nextGs: GameState = { ...gs, round: gs.round + 1 };
+    gsRef.current = nextGs;
+    startRound(nextGs);
   }, [startRound]);
 
   const resetGame = useCallback(() => {

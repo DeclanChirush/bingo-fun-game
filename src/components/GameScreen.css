@@ -46,10 +46,10 @@
 .game-body { display: flex; flex-direction: column; gap: 12px; flex: 1; }
 @media (min-width: 640px) {
   .game-body { flex-direction: row; align-items: flex-start; }
-  .left-panel { width: 240px; flex-shrink: 0; }
+  .left-panel { width: 220px; flex-shrink: 0; }
   .right-panel { flex: 1; }
 }
-@media (min-width: 820px) { .left-panel { width: 270px; } }
+@media (min-width: 820px) { .left-panel { width: 250px; } }
 
 .left-panel { display: flex; flex-direction: column; gap: 10px; }
 .right-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -66,14 +66,15 @@
   background: rgba(0,212,170,0.12);
   border-color: rgba(0,212,170,0.5);
   box-shadow: 0 0 16px rgba(0,212,170,0.15);
-  animation: caller-pulse 1.4s ease-in-out infinite alternate;
+  /* PERFORMANCE: finite animation, not infinite */
+  animation: caller-pulse 1s ease-in-out 3 alternate;
 }
 @keyframes caller-pulse {
   from { box-shadow: 0 0 8px rgba(0,212,170,0.15); }
   to   { box-shadow: 0 0 22px rgba(0,212,170,0.4); }
 }
 .cb-emoji { font-size: 1.3rem; flex-shrink: 0; }
-.cb-text { font-size: 0.88rem; font-weight: 700; color: rgba(255,255,255,0.75); }
+.cb-text { font-size: 0.85rem; font-weight: 700; color: rgba(255,255,255,0.75); }
 .cb-text strong { color: #fff; }
 .my-turn-banner .cb-text { color: #00d4aa; font-weight: 800; }
 
@@ -120,7 +121,8 @@
 @keyframes card-pop { from { transform: scale(0.72) translateY(28px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
 
 .phase-emoji { font-size: 3.2rem; }
-.bounce { animation: bounce-e 0.9s ease-in-out infinite alternate; }
+/* PERFORMANCE: finite bounce, not infinite */
+.bounce { animation: bounce-e 0.8s ease-in-out 4 alternate; }
 @keyframes bounce-e { from { transform: translateY(-5px); } to { transform: translateY(6px); } }
 
 .phase-card h2 { font-family: 'Fredoka One', cursive; font-size: 1.9rem; color: #fff; }
@@ -165,7 +167,6 @@
   width: 100%;
   justify-content: center;
 }
-
 .rounds-label {
   font-size: 0.8rem;
   font-weight: 800;
@@ -173,14 +174,23 @@
   letter-spacing: 0.08em;
   color: rgba(255,255,255,0.45);
 }
-
-.rounds-btns {
-  display: flex;
-  gap: 6px;
-}
-
+.rounds-btns { display: flex; gap: 6px; }
 .btn-ghost.active {
   background: rgba(255,215,0,0.18);
   border-color: rgba(255,215,0,0.55);
   color: #ffd700;
+}
+
+/* PERFORMANCE: reduce motion / battery saver */
+@media (prefers-reduced-motion: reduce) {
+  .caller-banner.my-turn-banner,
+  .bounce,
+  .last-num,
+  .phase-card,
+  .phase-overlay,
+  .toast,
+  .pip {
+    animation: none !important;
+    transition: none !important;
+  }
 }
