@@ -1,0 +1,159 @@
+.game-screen {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 8px 12px 32px;
+  max-width: 920px; margin: 0 auto;
+  min-height: calc(100dvh - 110px);
+}
+
+/* ── Top Bar ──────────────────────────────────────────────── */
+.top-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.top-bar-left, .top-bar-right { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+
+.role-tag { padding: 4px 12px; border-radius: 50px; font-size: 0.78rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+.host-tag { background: rgba(255,215,0,0.14); border: 1.5px solid rgba(255,215,0,0.38); color: #ffd700; }
+.peer-tag { background: rgba(77,121,255,0.14); border: 1.5px solid rgba(77,121,255,0.38); color: #7fa0ff; }
+.player-name-tag { font-weight: 800; font-size: 0.9rem; color: rgba(255,255,255,0.8); }
+
+.room-chip { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.07); border: 1.5px solid rgba(255,255,255,0.13); border-radius: 50px; padding: 4px 12px; }
+.rc-label { font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(255,255,255,0.38); }
+.rc-code { font-family: 'Fredoka One', cursive; font-size: 1rem; letter-spacing: 0.12em; background: linear-gradient(135deg,#ff6b9d,#c44dff,#4d79ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+
+.danger-btn { color: rgba(255,110,110,0.8) !important; }
+.danger-btn:hover { border-color: rgba(255,70,70,0.5) !important; background: rgba(255,50,50,0.1) !important; }
+
+/* ── Round bar ────────────────────────────────────────────── */
+.round-bar { display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,0.05); border: 1.5px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 8px 16px; flex-wrap: wrap; }
+.round-label { font-family: 'Fredoka One', cursive; font-size: 1rem; color: rgba(255,255,255,0.65); white-space: nowrap; }
+.round-pips { display: flex; gap: 4px; flex-wrap: wrap; }
+.pip { width: 18px; height: 7px; border-radius: 4px; background: rgba(255,255,255,0.1); transition: all 0.3s; }
+.pip.done { background: rgba(0,212,170,0.5); }
+.pip.current { background: #ffd700; box-shadow: 0 0 8px rgba(255,215,0,0.6); }
+
+/* ── Lobby ────────────────────────────────────────────────── */
+.lobby-area { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 8px 0 16px; }
+.lobby-inner { background: rgba(255,255,255,0.06); border: 1.5px solid rgba(255,255,255,0.12); border-radius: 24px; padding: 24px 20px; max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 14px; align-items: center; }
+.lobby-icon { font-size: 2.8rem; }
+.lobby-inner h2 { font-family: 'Fredoka One', cursive; font-size: 1.55rem; text-align: center; }
+.code-hl { color: #c44dff; }
+.lobby-inner p { color: rgba(255,255,255,0.5); font-size: 0.88rem; font-weight: 600; text-align: center; }
+.waiting-text { color: rgba(255,255,255,0.45); font-size: 0.9rem; font-weight: 700; text-align: center; }
+
+.lobby-card-preview { width: 100%; display: flex; flex-direction: column; gap: 7px; }
+.preview-label { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: rgba(255,255,255,0.4); text-align: center; }
+
+/* ── Game body ────────────────────────────────────────────── */
+.game-body { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+@media (min-width: 640px) {
+  .game-body { flex-direction: row; align-items: flex-start; }
+  .left-panel { width: 240px; flex-shrink: 0; }
+  .right-panel { flex: 1; }
+}
+@media (min-width: 820px) { .left-panel { width: 270px; } }
+
+.left-panel { display: flex; flex-direction: column; gap: 10px; }
+.right-panel { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+/* ── Caller banner ────────────────────────────────────────── */
+.caller-banner {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-radius: 14px;
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.12);
+  transition: all 0.3s;
+}
+.caller-banner.my-turn-banner {
+  background: rgba(0,212,170,0.12);
+  border-color: rgba(0,212,170,0.5);
+  box-shadow: 0 0 16px rgba(0,212,170,0.15);
+  animation: caller-pulse 1.4s ease-in-out infinite alternate;
+}
+@keyframes caller-pulse {
+  from { box-shadow: 0 0 8px rgba(0,212,170,0.15); }
+  to   { box-shadow: 0 0 22px rgba(0,212,170,0.4); }
+}
+.cb-emoji { font-size: 1.3rem; flex-shrink: 0; }
+.cb-text { font-size: 0.88rem; font-weight: 700; color: rgba(255,255,255,0.75); }
+.cb-text strong { color: #fff; }
+.my-turn-banner .cb-text { color: #00d4aa; font-weight: 800; }
+
+/* ── Called display ───────────────────────────────────────── */
+.called-display {
+  background: rgba(255,255,255,0.06);
+  border: 1.5px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  padding: 12px;
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.called-label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: rgba(255,255,255,0.38); }
+.last-num {
+  width: 58px; height: 58px; border-radius: 50%;
+  background: linear-gradient(135deg, #c44dff, #4d79ff);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Fredoka One', cursive; font-size: 1.55rem; color: #fff;
+  box-shadow: 0 4px 18px rgba(196,77,255,0.5);
+  animation: num-pop 0.35s cubic-bezier(0.34,1.56,0.64,1);
+}
+.last-num.empty { background: rgba(255,255,255,0.08); box-shadow: none; animation: none; font-size: 1.1rem; color: rgba(255,255,255,0.25); }
+@keyframes num-pop { from { transform: scale(0) rotate(-15deg); } to { transform: scale(1) rotate(0deg); } }
+.called-count { font-size: 0.75rem; color: rgba(255,255,255,0.35); font-weight: 700; }
+
+/* ── Score badge ──────────────────────────────────────────── */
+.my-score-badge { font-size: 0.83rem; font-weight: 700; color: rgba(255,255,255,0.5); padding: 6px 16px; background: rgba(255,255,255,0.06); border-radius: 50px; }
+.my-score-badge strong { color: #ffd700; }
+
+/* ── Phase overlay (round_end / game_over) ────────────────── */
+.phase-overlay { position: fixed; inset: 0; background: rgba(8,4,20,0.82); backdrop-filter: blur(8px); z-index: 8000; display: flex; align-items: center; justify-content: center; padding: 20px; animation: fade-in 0.3s ease; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.phase-card {
+  background: linear-gradient(135deg, rgba(18,8,38,0.98), rgba(32,12,55,0.98));
+  border: 2px solid rgba(255,255,255,0.14);
+  border-radius: 28px; padding: 34px 26px;
+  max-width: 420px; width: 100%; text-align: center;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+  animation: card-pop 0.4s cubic-bezier(0.34,1.4,0.64,1);
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  max-height: 90dvh; overflow-y: auto;
+}
+@keyframes card-pop { from { transform: scale(0.72) translateY(28px); opacity: 0; } to { transform: scale(1) translateY(0); opacity: 1; } }
+
+.phase-emoji { font-size: 3.2rem; }
+.bounce { animation: bounce-e 0.9s ease-in-out infinite alternate; }
+@keyframes bounce-e { from { transform: translateY(-5px); } to { transform: translateY(6px); } }
+
+.phase-card h2 { font-family: 'Fredoka One', cursive; font-size: 1.9rem; color: #fff; }
+.phase-sub { color: rgba(255,255,255,0.45); font-size: 0.88rem; font-weight: 700; }
+.game-over-title { background: linear-gradient(135deg,#ffd700,#ff6b9d); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; font-size: 2.4rem !important; }
+
+.scores-list { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.score-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: rgba(255,255,255,0.05); font-size: 0.9rem; font-weight: 700; }
+.score-row.me { background: rgba(196,77,255,0.12); border: 1.5px solid rgba(196,77,255,0.3); }
+.scores-list.final .final-row.rank-1 { border: 1.5px solid rgba(255,215,0,0.45); background: rgba(255,215,0,0.08); }
+.scores-list.final .final-row.rank-2 { border: 1.5px solid rgba(192,192,192,0.35); }
+.scores-list.final .final-row.rank-3 { border: 1.5px solid rgba(205,127,50,0.35); }
+.final-rank { font-size: 1.15rem; }
+.score-name { flex: 1; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.score-pts { font-family: 'Fredoka One', cursive; font-size: 1rem; color: #ffd700; }
+
+/* ── Toast ────────────────────────────────────────────────── */
+.toast {
+  position: fixed; top: 68px; left: 50%; transform: translateX(-50%);
+  background: rgba(28,12,50,0.96); border: 1.5px solid rgba(255,90,90,0.5);
+  color: rgba(255,170,170,0.95); padding: 9px 20px; border-radius: 50px;
+  font-size: 0.85rem; font-weight: 700; z-index: 9999; white-space: nowrap;
+  animation: toast-in 0.28s cubic-bezier(0.34,1.4,0.64,1); pointer-events: none;
+}
+@keyframes toast-in { from { transform: translateX(-50%) translateY(-10px); opacity: 0; } to { transform: translateX(-50%) translateY(0); opacity: 1; } }
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; border-radius: 50px; border: 2px solid transparent; font-family: 'Nunito', sans-serif; font-weight: 800; font-size: 0.9rem; cursor: pointer; transition: all 0.18s ease; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: linear-gradient(135deg,#ff6b9d,#c44dff); color:#fff; box-shadow:0 4px 18px rgba(196,77,255,0.4); }
+.btn-primary:not(:disabled):hover { transform: translateY(-2px); box-shadow: 0 8px 26px rgba(196,77,255,0.6); }
+.btn-ghost { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.16); color: #fff; }
+.btn-ghost:not(:disabled):hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.28); transform: translateY(-1px); }
+.btn-large { padding: 13px 28px; font-size: 1rem; }
+.btn-sm { padding: 6px 13px; font-size: 0.82rem; }
+.btn-xs { padding: 4px 10px; font-size: 0.75rem; }

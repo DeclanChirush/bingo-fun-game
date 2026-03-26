@@ -1,0 +1,100 @@
+.number-picker {
+  border-radius: 16px;
+  border: 1.5px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  padding: 12px 14px;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.number-picker.my-turn {
+  border-color: rgba(0, 212, 170, 0.5);
+  box-shadow: 0 0 18px rgba(0, 212, 170, 0.12);
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+.picker-header {
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.turn-label {
+  font-size: 0.83rem;
+  font-weight: 700;
+  display: block;
+}
+
+.turn-label.my {
+  color: #00d4aa;
+  font-weight: 800;
+}
+
+.turn-label.other {
+  color: rgba(255,255,255,0.5);
+}
+
+.turn-label.other strong {
+  color: rgba(255,255,255,0.8);
+}
+
+/* ── Chip grid ───────────────────────────────────────────── */
+.picker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chip {
+  /* Fixed width so they stay responsive but ordered */
+  width: calc(20% - 4px);
+  aspect-ratio: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1.5px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.07);
+  font-family: 'Fredoka One', cursive;
+  font-size: clamp(0.78rem, 2vw, 0.95rem);
+  color: rgba(255,255,255,0.6);
+  cursor: default;
+  transition: all 0.15s ease;
+  -webkit-tap-highlight-color: transparent;
+  padding: 0;
+}
+
+/* Available to pick (my turn, not yet called) */
+.chip.chip-available {
+  cursor: pointer;
+  color: rgba(255,255,255,0.9);
+  border-color: rgba(255,255,255,0.22);
+}
+
+.chip.chip-available:hover {
+  background: rgba(0,212,170,0.22);
+  border-color: rgba(0,212,170,0.7);
+  color: #00d4aa;
+  transform: scale(1.08);
+}
+
+.chip.chip-available:active {
+  transform: scale(0.94);
+}
+
+/* Already called */
+.chip.chip-used {
+  background: rgba(255,80,80,0.08);
+  border-color: rgba(255,80,80,0.2);
+  color: rgba(255,80,80,0.5);
+  text-decoration: line-through;
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Waiting (not my turn) — dim everything available */
+.number-picker.waiting .chip:not(.chip-used) {
+  opacity: 0.4;
+}
+
+@media (max-width: 360px) {
+  .chip { font-size: 0.72rem; }
+}

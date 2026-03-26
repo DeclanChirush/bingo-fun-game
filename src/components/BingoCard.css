@@ -1,0 +1,262 @@
+.bingo-card {
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── BINGO Letters ─────────────────────────────────────────── */
+.bingo-letters {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 5px;
+}
+
+.bingo-letter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--lc) 18%, transparent);
+  border: 2px solid color-mix(in srgb, var(--lc) 35%, transparent);
+  overflow: hidden;
+  transition: all 0.3s;
+}
+
+.bingo-letter.crossed-letter {
+  background: color-mix(in srgb, var(--lc) 30%, transparent);
+  border-color: var(--lc);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--lc) 55%, transparent);
+}
+
+.letter-text {
+  font-family: 'Fredoka One', cursive;
+  font-size: 1.4rem;
+  color: var(--lc);
+  position: relative;
+  z-index: 2;
+  transition: opacity 0.3s;
+}
+.crossed-letter .letter-text { opacity: 0.4; }
+
+.letter-strike {
+  position: absolute;
+  left: 8%; right: 8%; top: 50%;
+  height: 3px;
+  background: var(--lc);
+  border-radius: 2px;
+  transform: translateY(-50%);
+  z-index: 3;
+  animation: strike-in 0.35s ease;
+}
+@keyframes strike-in {
+  from { transform: translateY(-50%) scaleX(0); }
+  to   { transform: translateY(-50%) scaleX(1); }
+}
+
+/* ── Refresh button ────────────────────────────────────────── */
+.refresh-btn {
+  width: 100%;
+  padding: 8px 14px;
+  border-radius: 50px;
+  border: 2px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.75);
+  font-family: 'Nunito', sans-serif;
+  font-weight: 800;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.18s;
+  -webkit-tap-highlight-color: transparent;
+}
+.refresh-btn:hover {
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.32);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.refresh-btn:active { transform: translateY(0); }
+
+/* ── Grid wrapper (for SVG diagonal overlay) ───────────────── */
+.grid-wrapper {
+  position: relative;
+}
+
+/* ── 5×5 Grid ──────────────────────────────────────────────── */
+.bingo-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(5, 1fr);
+  gap: 5px;
+  position: relative;
+}
+
+/* ── Cell ──────────────────────────────────────────────────── */
+.bingo-cell {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 2px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+  padding: 0;
+  cursor: default;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cell-num {
+  font-family: 'Fredoka One', cursive;
+  font-size: clamp(0.82rem, 2.4vw, 1.05rem);
+  color: rgba(255,255,255,0.5);
+  position: relative;
+  z-index: 2;
+  transition: color 0.2s;
+}
+
+/* Called but not yet crossed — clickable */
+.bingo-cell.callable {
+  border-color: rgba(0,212,170,0.55);
+  background: rgba(0,212,170,0.1);
+  cursor: pointer;
+}
+.bingo-cell.callable .cell-num { color: #00d4aa; }
+.bingo-cell.callable:not(:disabled):hover {
+  background: rgba(0,212,170,0.22);
+  border-color: rgba(0,212,170,0.85);
+  transform: scale(1.06);
+}
+
+/* Latest called number — extra glow */
+.bingo-cell.last-called {
+  border-color: #ffd700;
+  background: rgba(255,215,0,0.18);
+  animation: last-pulse 0.9s ease-in-out infinite alternate;
+  cursor: pointer;
+}
+.bingo-cell.last-called .cell-num { color: #ffd700; }
+@keyframes last-pulse {
+  from { box-shadow: 0 0 7px rgba(255,215,0,0.45); }
+  to   { box-shadow: 0 0 22px rgba(255,215,0,0.95); }
+}
+
+/* Crossed */
+.bingo-cell.crossed {
+  background: rgba(255,100,100,0.12);
+  border-color: rgba(255,100,100,0.4);
+  cursor: default;
+}
+.bingo-cell.crossed .cell-num { opacity: 0.25; }
+
+.cross-svg {
+  position: absolute;
+  inset: 5px;
+  z-index: 3;
+  stroke: #ff6b6b;
+  stroke-width: 4;
+  fill: none;
+  animation: cross-pop 0.22s ease-out;
+}
+@keyframes cross-pop {
+  from { opacity: 0; transform: scale(0.5); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* Cell on a completed line — golden tint */
+.bingo-cell.on-line {
+  background: rgba(255,215,0,0.1);
+  border-color: rgba(255,215,0,0.35);
+}
+.bingo-cell.on-line.crossed .cross-svg { stroke: #ffd700; }
+
+/* Wrong cell flash */
+.bingo-cell.wrong-flash {
+  animation: wrong-shake 0.4s ease !important;
+  border-color: rgba(255,60,60,0.85) !important;
+  background: rgba(255,40,40,0.2) !important;
+}
+@keyframes wrong-shake {
+  0%,100% { transform: translateX(0); }
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* ── Row strikethrough ─────────────────────────────────────── */
+.row-strike {
+  /* Row index comes from CSS var --ri (0–4) */
+  position: absolute;
+  /* Each row takes 20% of height, gap is ~5px — approximate midpoint */
+  top: calc(var(--ri) * 20% + 10% - 2px);
+  left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #ffd700, #ff6b9d);
+  border-radius: 2px;
+  z-index: 10;
+  pointer-events: none;
+  box-shadow: 0 0 8px rgba(255,215,0,0.6);
+  animation: h-grow 0.4s ease;
+}
+@keyframes h-grow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+/* ── Col strikethrough ─────────────────────────────────────── */
+.col-strike {
+  position: absolute;
+  left: calc(var(--ci) * 20% + 10% - 2px);
+  top: 0; bottom: 0;
+  width: 4px;
+  background: linear-gradient(180deg, #c44dff, #00d4aa);
+  border-radius: 2px;
+  z-index: 10;
+  pointer-events: none;
+  box-shadow: 0 0 8px rgba(196,77,255,0.55);
+  animation: v-grow 0.4s ease;
+}
+@keyframes v-grow {
+  from { transform: scaleY(0); }
+  to   { transform: scaleY(1); }
+}
+
+/* ── Diagonal SVG overlay ──────────────────────────────────── */
+.diag-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 11;
+  overflow: visible;
+}
+
+.diag-overlay line {
+  filter: drop-shadow(0 0 5px rgba(255,215,0,0.7));
+  animation: diag-draw 0.5s ease;
+  stroke-dasharray: 150;
+  stroke-dashoffset: 0;
+}
+
+@keyframes diag-draw {
+  from { stroke-dashoffset: 150; }
+  to   { stroke-dashoffset: 0; }
+}
+
+/* ── Mobile ────────────────────────────────────────────────── */
+@media (max-width: 400px) {
+  .bingo-cell { border-radius: 8px; }
+  .bingo-letter { height: 34px; }
+  .letter-text { font-size: 1.15rem; }
+  .cell-num { font-size: 0.78rem; }
+  .bingo-letters { gap: 4px; }
+  .bingo-grid { gap: 4px; }
+}
