@@ -27,18 +27,20 @@ const PEER_CONFIG = {
   },
 };
 
-const initGameState = (hostId: string, hostName: string, totalRounds: number): GameState => ({
-  phase: 'lobby',
-  round: 1,
-  players: [{ id: hostId, name: hostName, isHost: true, score: 0 }],
-  callerOrder: [],
-  callerIndex: 0,
-  calledNumbers: [],
-  shuffledPool: [],
-  roundWinner: null,
-  locked: false,
-  totalRounds
-});
+function initGameState(hostId: string, hostName: string, totalRounds: number): GameState {
+  return {
+    phase: 'lobby',
+    round: 1,
+    players: [{ id: hostId, name: hostName, isHost: true, score: 0 }],
+    callerOrder: [],
+    callerIndex: 0,
+    calledNumbers: [],
+    shuffledPool: [],
+    roundWinner: null,
+    locked: false,
+    totalRounds,
+  };
+}
 
 export function useHost(hostName: string, soundEnabled: boolean, totalRounds: number) {
   const [roomCode, setRoomCode] = useState('');
@@ -46,11 +48,15 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   const [error, setError] = useState<string | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
 
-  const claimProcessedRef = useRef(false);
-  const nextRoundInProgressRef = useRef(false);
   const peerRef = useRef<Peer | null>(null);
   const connsRef = useRef<Map<string, DataConnection>>(new Map());
+
+  // Single source of truth for game state — always in sync
   const gsRef = useRef<GameState | null>(null);
+
+  // Guards
+  const claimProcessedRef = useRef(false);
+  const nextRoundLockedRef = useRef(false);
 
   const soundRef = useRef(soundEnabled);
   useEffect(() => { soundRef.current = soundEnabled; }, [soundEnabled]);
@@ -58,22 +64,27 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   const totalRoundsRef = useRef(totalRounds);
   useEffect(() => { totalRoundsRef.current = totalRounds; }, [totalRounds]);
 
-  const updateGS = useCallback((updater: (prev: GameState) => GameState) => {
-    setGameState(prev => {
-      const next = updater(prev!);
-      gsRef.current = next;
-      return next;
-    });
-  }, []);
+  // ── Helpers ──────────────────────────────────────────────────
+  // Commit a new game state to both ref and React state
+  const commitGS = (next: GameState) => {
+    gsRef.current = next;
+    setGameState(next);
+  };
 
   const broadcast = useCallback((msg: HostMsg) => {
     connsRef.current.forEach(conn => { if (conn.open) conn.send(msg); });
   }, []);
 
-  // ── Start round ─────────────────────────────────────────────
+  // sendTo a single connection (used for JOIN responses)
+  const sendTo = (conn: DataConnection, msg: HostMsg) => {
+    if (conn.open) conn.send(msg);
+  };
+
+  // ── Start round ──────────────────────────────────────────────
   const startRound = useCallback((gs: GameState) => {
     claimProcessedRef.current = false;
-    nextRoundInProgressRef.current = false;
+    nextRoundLockedRef.current = false;
+
     const pool = generatePool();
     const playerIds = gs.players.map(p => p.id);
     const callerOrder = buildCallerOrder(playerIds, gs.round);
@@ -88,82 +99,143 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
       roundWinner: null,
       locked: true,
     };
-    gsRef.current = next;
-    setGameState(next);
-    broadcast({ type: 'ROUND_STARTED', payload: { round: next.round, callerOrder, shuffledPool: pool } });
+
+    commitGS(next);
+    broadcast({
+      type: 'ROUND_STARTED',
+      payload: { round: next.round, callerOrder, shuffledPool: pool },
+    });
   }, [broadcast]);
 
   // ── Call a number ────────────────────────────────────────────
   const callNumber = useCallback((num: number) => {
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'playing') return;
+    if (gs.calledNumbers.includes(num)) return;
 
     const calledNumbers = [num, ...gs.calledNumbers];
     const nextCallerIndex = (gs.callerIndex + 1) % gs.callerOrder.length;
+
+    const next: GameState = { ...gs, calledNumbers, callerIndex: nextCallerIndex };
+    commitGS(next);
 
     broadcast({
       type: 'NUMBER_CALLED',
       payload: { number: num, calledNumbers, nextCallerIndex },
     });
 
-    updateGS(prev => ({ ...prev!, calledNumbers, callerIndex: nextCallerIndex }));
-
     if (soundRef.current) playDraw();
-  }, [broadcast, updateGS]);
+  }, [broadcast]);
 
   // ── Claim BINGO ──────────────────────────────────────────────
-  const processBingoClaim = useCallback((playerId: string, playerName: string) => {
-    if (claimProcessedRef.current) return;
+  // Tie-break rule:
+  //   1. If the caller themselves has bingo → they win.
+  //   2. Otherwise the first claimer in *remaining* caller-turn order wins.
+  //      (i.e. whoever is next in line to call after the current caller.)
+  const pendingClaimsRef = useRef<{ id: string; name: string }[]>([]);
+  const claimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resolveClaims = useCallback(() => {
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'playing' || gs.roundWinner) return;
+    if (claimProcessedRef.current) return;
     claimProcessedRef.current = true;
 
-    const scores: Record<string, number> = {};
-    gs.players.forEach(p => { scores[p.id] = p.score + (p.id === playerId ? 1 : 0); });
+    const claims = pendingClaimsRef.current;
+    pendingClaimsRef.current = [];
+
+    if (claims.length === 0) return;
+
+    // Determine winner by caller-order priority:
+    // current caller first, then next in rotation
+    const { callerOrder, callerIndex } = gs;
+    let winner = claims[0]; // fallback: first to claim
+
+    for (let offset = 0; offset < callerOrder.length; offset++) {
+      const idx = (callerIndex + offset) % callerOrder.length;
+      const candidate = callerOrder[idx];
+      const match = claims.find(c => c.id === candidate);
+      if (match) { winner = match; break; }
+    }
 
     const isGameOver = gs.round >= gs.totalRounds;
+    const scores: Record<string, number> = {};
+    gs.players.forEach(p => {
+      scores[p.id] = p.score + (p.id === winner.id ? 1 : 0);
+    });
 
     const next: GameState = {
       ...gs,
       phase: isGameOver ? 'game_over' : 'round_end',
-      round: gs.round,
-      roundWinner: playerId,
-      players: gs.players.map(p => ({ ...p, score: p.id === playerId ? p.score + 1 : p.score })),
+      roundWinner: winner.id,
+      players: gs.players.map(p => ({
+        ...p,
+        score: p.id === winner.id ? p.score + 1 : p.score,
+      })),
     };
-    gsRef.current = next;
-    setGameState(next);
+    commitGS(next);
 
-    broadcast({ type: 'ROUND_WON', payload: { winnerId: playerId, winnerName: playerName, scores } });
+    broadcast({
+      type: 'ROUND_WON',
+      payload: { winnerId: winner.id, winnerName: winner.name, scores },
+    });
     if (isGameOver) {
       broadcast({ type: 'GAME_OVER', payload: { scores } });
     }
-    if (soundRef.current) { setTimeout(() => playWin(), 200); setTimeout(() => playBingo(), 700); }
+    if (soundRef.current) {
+      setTimeout(() => playWin(), 200);
+      setTimeout(() => playBingo(), 700);
+    }
   }, [broadcast]);
 
-  // ── Handle peer messages ─────────────────────────────────────
-  // FIX: Store the handler in a ref so the connection's 'data' listener
-  // (registered once on connect) always calls the LATEST version.
-  // Previously, conn.on('data', handlePeerMsg) captured a stale closure,
-  // meaning callNumber / processBingoClaim seen by peer messages were the
-  // original ones from mount — so nextRound appeared broken until a player
-  // left (which triggered a re-render and accidentally refreshed the closure).
-  const handlePeerMsgRef = useRef<(conn: DataConnection, msg: PeerMsg) => void>(() => {});
+  const queueBingoClaim = useCallback((playerId: string, playerName: string) => {
+    const gs = gsRef.current;
+    if (!gs || gs.phase !== 'playing' || gs.roundWinner) return;
+    if (claimProcessedRef.current) return;
 
-  handlePeerMsgRef.current = (conn: DataConnection, msg: PeerMsg) => {
+    // Avoid duplicate claims from the same player
+    if (pendingClaimsRef.current.some(c => c.id === playerId)) return;
+    pendingClaimsRef.current.push({ id: playerId, name: playerName });
+
+    // Wait a short window to collect simultaneous claims, then resolve
+    if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
+    claimTimerRef.current = setTimeout(() => {
+      resolveClaims();
+    }, 150);
+  }, [resolveClaims]);
+
+  // ── Connection message handler (via ref — never stale) ───────
+  // IMPORTANT: We define this as a plain ref-assigned function (NOT useCallback)
+  // so the conn.on('data') listener, registered once on connect, always calls
+  // the absolute latest version. This is the root cause of the original "stuck
+  // after round" bug — stale useCallback closures captured old state.
+  const msgHandlerRef = useRef<(conn: DataConnection, msg: PeerMsg) => void>(() => {});
+
+  // Re-assign on every render (cheap, not a hook)
+  msgHandlerRef.current = (conn: DataConnection, msg: PeerMsg) => {
     if (msg.type === 'JOIN_REQUEST') {
       const gs = gsRef.current;
-      if (gs?.locked || (gs?.phase !== 'lobby' && gs?.phase !== undefined)) {
-        conn.send({ type: 'JOIN_REJECTED', payload: { reason: 'Game already started. Please wait for the next game.' } } as HostMsg);
+      if (gs?.locked) {
+        sendTo(conn, {
+          type: 'JOIN_REJECTED',
+          payload: { reason: 'Game already started. Please wait for the next game.' },
+        });
         return;
       }
-      const newPlayer: PlayerInfo = { id: conn.peer, name: msg.payload.name, isHost: false, score: 0 };
-      updateGS(prev => {
-        const players = [...prev!.players.filter(p => p.id !== conn.peer), newPlayer];
-        const next = { ...prev!, players };
-        conn.send({ type: 'FULL_STATE', payload: next } as HostMsg);
-        setTimeout(() => broadcast({ type: 'PLAYER_LIST', payload: { players } }), 50);
-        return next;
-      });
+      const newPlayer: PlayerInfo = {
+        id: conn.peer,
+        name: msg.payload.name,
+        isHost: false,
+        score: 0,
+      };
+      const players = [
+        ...(gsRef.current?.players ?? []).filter(p => p.id !== conn.peer),
+        newPlayer,
+      ];
+      const next: GameState = { ...gsRef.current!, players };
+      commitGS(next);
+      sendTo(conn, { type: 'FULL_STATE', payload: next });
+      setTimeout(() => broadcast({ type: 'PLAYER_LIST', payload: { players } }), 50);
     }
 
     if (msg.type === 'CALL_NUMBER') {
@@ -176,11 +248,11 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     }
 
     if (msg.type === 'CLAIM_BINGO') {
-      processBingoClaim(msg.payload.playerId, msg.payload.playerName);
+      queueBingoClaim(msg.payload.playerId, msg.payload.playerName);
     }
   };
 
-  // ── Host actions ─────────────────────────────────────────────
+  // ── Host-side actions ────────────────────────────────────────
   const hostCallNumber = useCallback((num: number) => {
     resumeAudio();
     const gs = gsRef.current;
@@ -193,9 +265,10 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
 
   const hostClaimBingo = useCallback(() => {
     const hostId = peerRef.current?.id ?? '';
-    const resolvedName = gsRef.current?.players.find(p => p.id === hostId)?.name ?? hostName;
-    processBingoClaim(hostId, resolvedName);
-  }, [processBingoClaim, hostName]);
+    const gs = gsRef.current;
+    const resolvedName = gs?.players.find(p => p.id === hostId)?.name ?? hostName;
+    queueBingoClaim(hostId, resolvedName);
+  }, [queueBingoClaim, hostName]);
 
   const startGame = useCallback(() => {
     const gs = gsRef.current;
@@ -204,14 +277,16 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   }, [startRound]);
 
   const nextRound = useCallback(() => {
-    if (nextRoundInProgressRef.current) return;
+    if (nextRoundLockedRef.current) return;
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'round_end') return;
-    nextRoundInProgressRef.current = true;
+    nextRoundLockedRef.current = true;
 
+    // Increment round then start
     const nextGs: GameState = { ...gs, round: gs.round + 1 };
-    gsRef.current = nextGs;
-    startRound(nextGs);
+    commitGS(nextGs);
+    // Small delay so React flushes before we broadcast ROUND_STARTED
+    setTimeout(() => startRound(nextGs), 50);
   }, [startRound]);
 
   const resetGame = useCallback(() => {
@@ -219,12 +294,15 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     if (!gs) return;
     const hostId = peerRef.current?.id ?? '';
     const reset: GameState = {
-      ...initGameState(hostId, gs.players.find(p => p.isHost)?.name ?? hostName, gs.totalRounds),
+      ...initGameState(
+        hostId,
+        gs.players.find(p => p.isHost)?.name ?? hostName,
+        gs.totalRounds,
+      ),
       players: gs.players.map(p => ({ ...p, score: 0 })),
       locked: false,
     };
-    gsRef.current = reset;
-    setGameState(reset);
+    commitGS(reset);
     broadcast({ type: 'GAME_RESET', payload: {} });
   }, [broadcast, hostName]);
 
@@ -234,10 +312,9 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     const peer = new Peer(roomCodeToPeerId(code), PEER_CONFIG);
     peerRef.current = peer;
 
-    peer.on('open', (id) => {
+    peer.on('open', id => {
       const gs = initGameState(id, hostName, totalRoundsRef.current);
-      gsRef.current = gs;
-      setGameState(gs);
+      commitGS(gs);
       setRoomCode(code);
       setPeerReady(true);
     });
@@ -246,25 +323,34 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
 
     peer.on('connection', conn => {
       conn.on('open', () => connsRef.current.set(conn.peer, conn));
-      // FIX: use the ref so the listener always dispatches to the latest handler
-      conn.on('data', data => handlePeerMsgRef.current(conn, data as PeerMsg));
+
+      // Route through ref — always calls the latest msgHandlerRef.current
+      // This avoids stale closures on callNumber / queueBingoClaim
+      conn.on('data', data => msgHandlerRef.current(conn, data as PeerMsg));
+
       conn.on('close', () => {
         connsRef.current.delete(conn.peer);
-        updateGS(prev => {
-          const players = prev!.players.filter(p => p.id !== conn.peer);
-          const next = { ...prev!, players };
-          broadcast({ type: 'PLAYER_LIST', payload: { players } });
-          return next;
-        });
+        const gs = gsRef.current;
+        if (!gs) return;
+        const players = gs.players.filter(p => p.id !== conn.peer);
+        const next = { ...gs, players };
+        commitGS(next);
+        broadcast({ type: 'PLAYER_LIST', payload: { players } });
       });
     });
 
-    return () => peer.destroy();
+    return () => {
+      if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
+      peer.destroy();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {
-    roomCode, peerReady, error, gameState,
+    roomCode,
+    peerReady,
+    error,
+    gameState,
     myId: peerRef.current?.id ?? '',
     actions: { startGame, nextRound, resetGame, hostCallNumber, hostClaimBingo },
   };

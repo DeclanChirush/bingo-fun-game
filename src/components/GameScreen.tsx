@@ -37,7 +37,9 @@ export default function GameScreen({
   const [confetti, setConfetti] = useState(false);
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const prevPhaseRef = useRef(gameState.phase);
+
+  // Track the last round+phase we started so we know when a genuinely new round begins
+  const lastRoundStartedRef = useRef<number>(0);
   const prevCalledRef = useRef<number[]>([]);
   const claimedRef = useRef(false);
 
@@ -49,27 +51,27 @@ export default function GameScreen({
   const currentCallerId = callerOrder[callerIndex];
   const currentCallerName = players.find(p => p.id === currentCallerId)?.name ?? '…';
   const me = players.find(p => p.id === myId);
-  // BUG FIX: roundWinner display — round is no longer pre-incremented
   const roundWinnerName = players.find(p => p.id === roundWinner)?.name ?? '';
   const iWon = roundWinner === myId;
   const hasWon = useMemo(() => isFullBingo(card), [card]);
 
-  // Reset card on new round
+  // ── Reset card when a new round starts ───────────────────────
   useEffect(() => {
-    if (phase === 'playing' && prevPhaseRef.current !== 'playing') {
+    if (phase === 'playing' && round !== lastRoundStartedRef.current) {
+      // This is a genuinely new round
+      lastRoundStartedRef.current = round;
       claimedRef.current = false;
-      if (prevPhaseRef.current === 'round_end') {
-        setCard(generateCard());
-      }
       setWonRound(false);
       setConfetti(false);
       prevCalledRef.current = [];
+      // Always generate a fresh card for every round
+      setCard(generateCard());
     }
-    prevPhaseRef.current = phase;
-  }, [phase]);
+  }, [phase, round]);
 
-  // Auto-apply newly called numbers to card
+  // ── Auto-apply newly called numbers to card ──────────────────
   useEffect(() => {
+    if (phase !== 'playing') return;
     const prev = new Set(prevCalledRef.current);
     const newNums = calledNumbers.filter(n => !prev.has(n));
     if (newNums.length === 0) return;
@@ -79,9 +81,9 @@ export default function GameScreen({
       for (const n of newNums) updated = applyNumber(updated, n);
       return updated;
     });
-  }, [calledNumbers]);
+  }, [calledNumbers, phase]);
 
-  // Win detection
+  // ── Auto-bingo detection ─────────────────────────────────────
   useEffect(() => {
     if (wonRound || phase !== 'playing' || claimedRef.current) return;
     if (hasWon) {
@@ -93,7 +95,7 @@ export default function GameScreen({
     }
   }, [card, wonRound, phase, onClaimBingo, soundEnabled, hasWon]);
 
-  // Confetti for winners
+  // ── Confetti ─────────────────────────────────────────────────
   useEffect(() => {
     if ((phase === 'round_end' || phase === 'game_over') && iWon) setConfetti(true);
     else if (phase === 'round_end' || phase === 'game_over') setConfetti(false);
@@ -112,7 +114,7 @@ export default function GameScreen({
     if (soundEnabled) playMark();
   }, [card, calledSet, soundEnabled, showToast]);
 
-  // Inline pick: caller taps the grid to call a number
+  // Caller taps their own card to call a number
   const handlePickNumber = useCallback((num: number) => {
     resumeAudio();
     // Optimistic local update
@@ -127,7 +129,10 @@ export default function GameScreen({
   };
 
   const copyCode = () => {
-    navigator.clipboard.writeText(roomCode).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+    navigator.clipboard.writeText(roomCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   return (
@@ -219,7 +224,6 @@ export default function GameScreen({
       {/* ── PLAYING ── */}
       {phase === 'playing' && (
         <div className="game-body">
-          {/* Left panel: info sidebar */}
           <div className="left-panel">
             <div className={`caller-banner ${isMyTurn ? 'my-turn-banner' : ''}`}>
               {isMyTurn ? (
@@ -237,7 +241,6 @@ export default function GameScreen({
 
             <PlayerList players={players} myId={myId} currentCallerId={currentCallerId} />
 
-            {/* Last called number */}
             <div className="called-display">
               <p className="called-label">Last Called</p>
               {lastCalled
@@ -248,7 +251,6 @@ export default function GameScreen({
             </div>
           </div>
 
-          {/* Right panel: the card (now doubles as the picker) */}
           <div className="right-panel">
             <BingoCard
               card={card}
@@ -275,26 +277,23 @@ export default function GameScreen({
           <div className="phase-card">
             <div className="phase-emoji">{iWon ? '🏆' : '😢'}</div>
             <h2>{iWon ? 'You Won the Round!' : `${roundWinnerName} Wins!`}</h2>
-            {/* BUG FIX: show current round (not pre-incremented) */}
             <p className="phase-sub">Round {round} of {gameState.totalRounds} complete</p>
             <div className="scores-list">
-              {[...players].sort((a,b) => b.score - a.score).map((p, i) => (
+              {[...players].sort((a, b) => b.score - a.score).map((p, i) => (
                 <div key={p.id} className={`score-row ${p.id === myId ? 'me' : ''}`}>
-                  <span>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}</span>
+                  <span>{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</span>
                   <span className="score-name">{p.name}{p.id === myId ? ' (you)' : ''}</span>
                   <span className="score-pts">{p.score}pt</span>
                 </div>
               ))}
             </div>
-            {/* BUG FIX: show Next Round button when there are still rounds left */}
             {isHost && round < gameState.totalRounds ? (
               <button className="btn btn-primary btn-large" onClick={onNextRound}>
                 ▶ Next Round ({round + 1}/{gameState.totalRounds})
               </button>
-            ) : isHost && round >= gameState.totalRounds ? (
-              // shouldn't reach here (game_over handles it) but safety fallback
+            ) : isHost ? (
               <button className="btn btn-primary btn-large" onClick={onNextRound}>
-                ▶ Finish Game
+                ▶ See Final Results
               </button>
             ) : (
               <p className="waiting-text">⏳ Waiting for host…</p>
@@ -311,9 +310,9 @@ export default function GameScreen({
             <h2 className="game-over-title">Game Over!</h2>
             <p className="phase-sub">Final Scoreboard — {gameState.totalRounds} Rounds</p>
             <div className="scores-list final">
-              {[...players].sort((a,b) => b.score - a.score).map((p, i) => (
-                <div key={p.id} className={`score-row final-row rank-${i+1} ${p.id === myId ? 'me' : ''}`}>
-                  <span className="final-rank">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}</span>
+              {[...players].sort((a, b) => b.score - a.score).map((p, i) => (
+                <div key={p.id} className={`score-row final-row rank-${i + 1} ${p.id === myId ? 'me' : ''}`}>
+                  <span className="final-rank">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</span>
                   <span className="score-name">{p.name}{p.id === myId ? ' (you)' : ''}</span>
                   <span className="score-pts">{p.score}pt</span>
                 </div>

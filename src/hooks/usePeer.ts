@@ -34,14 +34,20 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
   const soundRef = useRef(soundEnabled);
   useEffect(() => { soundRef.current = soundEnabled; }, [soundEnabled]);
 
-  const handleHostMsg = useCallback((msg: HostMsg) => {
+  // Handle every message from the host
+  // Use a ref-based handler so conn.on('data') never has a stale closure
+  const hostMsgHandlerRef = useRef<(msg: HostMsg) => void>(() => {});
+
+  hostMsgHandlerRef.current = (msg: HostMsg) => {
     switch (msg.type) {
       case 'FULL_STATE':
         setGameState(msg.payload);
         break;
+
       case 'PLAYER_LIST':
         setGameState(prev => prev ? { ...prev, players: msg.payload.players } : null);
         break;
+
       case 'ROUND_STARTED':
         claimedRef.current = false;
         setGameState(prev => prev ? {
@@ -56,6 +62,7 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
           locked: true,
         } : null);
         break;
+
       case 'NUMBER_CALLED':
         setGameState(prev => prev ? {
           ...prev,
@@ -64,19 +71,23 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
         } : null);
         if (soundRef.current) playDraw();
         break;
+
       case 'ROUND_WON':
         setGameState(prev => prev ? {
           ...prev,
           phase: 'round_end',
-          // BUG FIX: round stays the same (host no longer increments it in ROUND_WON)
           roundWinner: msg.payload.winnerId,
           players: prev.players.map(p => ({
             ...p,
             score: msg.payload.scores[p.id] ?? p.score,
           })),
         } : null);
-        if (soundRef.current) { setTimeout(() => playWin(), 200); setTimeout(() => playBingo(), 700); }
+        if (soundRef.current) {
+          setTimeout(() => playWin(), 200);
+          setTimeout(() => playBingo(), 700);
+        }
         break;
+
       case 'GAME_OVER':
         setGameState(prev => prev ? {
           ...prev,
@@ -86,9 +97,14 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
             score: msg.payload.scores[p.id] ?? p.score,
           })),
         } : null);
-        if (soundRef.current) { setTimeout(() => playWin(), 200); setTimeout(() => playBingo(), 700); }
+        if (soundRef.current) {
+          setTimeout(() => playWin(), 200);
+          setTimeout(() => playBingo(), 700);
+        }
         break;
+
       case 'GAME_RESET':
+        claimedRef.current = false;
         setGameState(prev => prev ? {
           ...prev,
           phase: 'lobby',
@@ -102,12 +118,13 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
           players: prev.players.map(p => ({ ...p, score: 0 })),
         } : null);
         break;
+
       case 'JOIN_REJECTED':
         setRejectReason(msg.payload.reason);
         setStatus('rejected');
         break;
     }
-  }, []);
+  };
 
   const send = useCallback((msg: PeerMsg) => {
     if (connRef.current?.open) connRef.current.send(msg);
@@ -129,7 +146,7 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
     const peer = new Peer(PEER_CONFIG);
     peerRef.current = peer;
 
-    peer.on('open', (id) => {
+    peer.on('open', id => {
       setMyId(id);
       const hostPeerId = roomCodeToPeerId(roomCode.toUpperCase().trim());
       const conn = peer.connect(hostPeerId, { reliable: true, serialization: 'json' });
@@ -139,15 +156,21 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
         setStatus('connected');
         conn.send({ type: 'JOIN_REQUEST', payload: { name: playerName } } as PeerMsg);
       });
-      conn.on('data', data => handleHostMsg(data as HostMsg));
+
+      // Route through ref — never stale
+      conn.on('data', data => hostMsgHandlerRef.current(data as HostMsg));
+
       conn.on('close', () => setStatus('disconnected'));
       conn.on('error', () => setStatus('error'));
     });
 
-    peer.on('error', (err) => {
-      const msg = err.type === 'peer-unavailable' ? 'rejected' : 'error';
-      if (msg === 'rejected') setRejectReason('Room not found. Check the code.');
-      setStatus(msg as ConnStatus);
+    peer.on('error', err => {
+      if (err.type === 'peer-unavailable') {
+        setRejectReason('Room not found. Check the code.');
+        setStatus('rejected');
+      } else {
+        setStatus('error');
+      }
     });
 
     return () => peer.destroy();
