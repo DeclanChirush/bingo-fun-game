@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, memo } from 'react';
 import type { CardState, CompletedLine } from '../utils/multiplayerTypes';
 import { cellOnCompletedLine } from '../utils/gameLogic';
 import './BingoCard.css';
@@ -9,15 +9,18 @@ interface Props {
   calledNumbers: Set<number>;
   onCross: (row: number, col: number) => void;
   disabled: boolean;
-  onRefresh?: () => void; // lobby only
+  onRefresh?: () => void;
   showRefresh?: boolean;
+  // Inline picking props (replaces NumberPicker panel)
+  isMyTurn?: boolean;
+  onPickNumber?: (n: number) => void;
+  currentCallerName?: string;
 }
 
 const LETTER_COLORS = ['#ff6b9d', '#c44dff', '#4d79ff', '#00d4aa', '#ffd700'];
 const LETTERS = ['B', 'I', 'N', 'G', 'O'];
 
 function DiagLine({ type }: { type: 0 | 1 }) {
-  // Rendered via SVG overlay on the grid
   if (type === 0) {
     return (
       <line
@@ -34,18 +37,72 @@ function DiagLine({ type }: { type: 0 | 1 }) {
   );
 }
 
+// Memoized cell to avoid re-rendering every cell when only one changes
+const BingoCell = memo(function BingoCell({
+  num, isCrossed, isCalled, isLast, onLine, isWrong, isPickMode, disabled,
+  onClick,
+}: {
+  num: number;
+  isCrossed: boolean;
+  isCalled: boolean;
+  isLast: boolean;
+  onLine: boolean;
+  isWrong: boolean;
+  isPickMode: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const classes = [
+    'bingo-cell',
+    isCrossed                          ? 'crossed'     : '',
+    onLine                             ? 'on-line'     : '',
+    isLast && !isCrossed               ? 'last-called' : '',
+    isCalled && !isCrossed             ? 'callable'    : '',
+    isWrong                            ? 'wrong-flash' : '',
+    isPickMode && !isCalled            ? 'pick-mode'   : '',
+  ].filter(Boolean).join(' ');
+
+  return (
+    <button
+      className={classes}
+      onClick={onClick}
+      disabled={disabled}
+    >
+      <span className="cell-num">{num}</span>
+      {isCrossed && (
+        <svg className="cross-svg" viewBox="0 0 40 40">
+          <line x1="7" y1="7" x2="33" y2="33" strokeLinecap="round" />
+          <line x1="33" y1="7" x2="7" y2="33" strokeLinecap="round" />
+        </svg>
+      )}
+    </button>
+  );
+});
+
 export default function BingoCard({
-  card, lastCalledNumber, calledNumbers, onCross, disabled, onRefresh, showRefresh,
+  card, lastCalledNumber, calledNumbers, onCross, disabled,
+  onRefresh, showRefresh,
+  isMyTurn = false, onPickNumber, currentCallerName,
 }: Props) {
   const [wrongCell, setWrongCell] = useState<[number, number] | null>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
 
   const diag0Done = card.completedLines.some(l => l.type === 'diag' && l.index === 0);
   const diag1Done = card.completedLines.some(l => l.type === 'diag' && l.index === 1);
 
+  // Are we in "pick mode" — my turn to call a number from the grid?
+  const isPickMode = !!onPickNumber && isMyTurn;
+
   const handleCellClick = (row: number, col: number) => {
-    if (disabled) return;
     const num = card.numbers[row][col];
+
+    // Pick mode: caller taps any uncalled cell to broadcast that number
+    if (isPickMode && !calledNumbers.has(num)) {
+      onPickNumber!(num);
+      return;
+    }
+
+    // Normal cross mode: mark a called number on your card
+    if (disabled) return;
     if (card.crossed[row][col]) return;
     if (!calledNumbers.has(num)) {
       setWrongCell([row, col]);
@@ -71,6 +128,17 @@ export default function BingoCard({
         ))}
       </div>
 
+      {/* Pick mode banner */}
+      {onPickNumber && (
+        <div className={`pick-banner ${isMyTurn ? 'pick-banner-active' : 'pick-banner-waiting'}`}>
+          {isMyTurn ? (
+            <span>🎯 <strong>Your turn!</strong> Tap any number to call it</span>
+          ) : (
+            <span>⏳ <strong>{currentCallerName}</strong> is picking…</span>
+          )}
+        </div>
+      )}
+
       {/* Refresh button (lobby only) */}
       {showRefresh && onRefresh && (
         <button className="refresh-btn" onClick={onRefresh} title="Shuffle card numbers">
@@ -79,41 +147,41 @@ export default function BingoCard({
       )}
 
       {/* 5×5 grid with SVG diagonal overlay */}
-      <div className="grid-wrapper" ref={gridRef}>
+      <div className="grid-wrapper">
         <div className="bingo-grid">
-          {card.numbers.map((row, rIdx) => (
+          {card.numbers.map((row, rIdx) =>
             row.map((num, cIdx) => {
               const isCrossed = card.crossed[rIdx][cIdx];
               const isCalled = calledNumbers.has(num);
-              const isLast = num === lastCalledNumber && !isCrossed;
+              const isLast = num === lastCalledNumber;
               const onLine = cellOnCompletedLine(card.completedLines, rIdx, cIdx);
               const isWrong = wrongCell?.[0] === rIdx && wrongCell?.[1] === cIdx;
 
+              // In pick mode: uncalled = pickable, called = already used
+              // In normal mode: called & not crossed = clickable, else disabled
+              let cellDisabled: boolean;
+              if (isPickMode) {
+                cellDisabled = isCalled; // already called numbers can't be picked again
+              } else {
+                cellDisabled = disabled || isCrossed || !isCalled;
+              }
+
               return (
-                <button
+                <BingoCell
                   key={`${rIdx}-${cIdx}`}
-                  className={[
-                    'bingo-cell',
-                    isCrossed   ? 'crossed'    : '',
-                    onLine      ? 'on-line'    : '',
-                    isLast      ? 'last-called': '',
-                    isCalled && !isCrossed ? 'callable' : '',
-                    isWrong     ? 'wrong-flash': '',
-                  ].filter(Boolean).join(' ')}
+                  num={num}
+                  isCrossed={isCrossed}
+                  isCalled={isCalled}
+                  isLast={isLast}
+                  onLine={onLine}
+                  isWrong={isWrong}
+                  isPickMode={isPickMode && !isCalled}
+                  disabled={cellDisabled}
                   onClick={() => handleCellClick(rIdx, cIdx)}
-                  disabled={disabled || isCrossed || !isCalled}
-                >
-                  <span className="cell-num">{num}</span>
-                  {isCrossed && (
-                    <svg className="cross-svg" viewBox="0 0 40 40">
-                      <line x1="7" y1="7" x2="33" y2="33" strokeLinecap="round"/>
-                      <line x1="33" y1="7" x2="7" y2="33" strokeLinecap="round"/>
-                    </svg>
-                  )}
-                </button>
+                />
               );
             })
-          ))}
+          )}
 
           {/* Row strikethroughs */}
           {card.completedLines.filter(l => l.type === 'row').map(l => (
