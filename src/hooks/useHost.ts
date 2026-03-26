@@ -18,7 +18,15 @@ export function roomCodeToPeerId(code: string) {
 
 const PEER_CONFIG = {
   host: '0.peerjs.com', port: 443, secure: true, path: '/',
-  config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
+  pingInterval: 3000,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+    ],
+    iceCandidatePoolSize: 10,
+  },
 };
 
 const initGameState = (hostId: string, hostName: string): GameState => ({
@@ -79,21 +87,40 @@ export function useHost(hostName: string, soundEnabled: boolean) {
   }, [broadcast]);
 
   // ── Call a number (host or relayed from peer) ────────────────
+  // const callNumber = useCallback((num: number) => {
+  //   const gs = gsRef.current;
+  //   if (!gs || gs.phase !== 'playing') return;
+  //   const caller = gs.callerOrder[gs.callerIndex];
+  //   const hostId = peerRef.current?.id ?? '';
+  //   // Only the current caller can call (host enforces)
+  //   if (caller !== hostId && caller !== num.toString()) {
+  //     // relayed call is already validated by caller check upstream
+  //   }
+
+  //   const calledNumbers = [num, ...gs.calledNumbers];
+  //   const nextCallerIndex = (gs.callerIndex + 1) % gs.callerOrder.length;
+
+  //   updateGS(prev => ({ ...prev!, calledNumbers, callerIndex: nextCallerIndex }));
+  //   broadcast({ type: 'NUMBER_CALLED', payload: { number: num, calledNumbers, nextCallerIndex } });
+  //   if (soundRef.current) playDraw();
+  // }, [broadcast, updateGS]);
+
   const callNumber = useCallback((num: number) => {
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'playing') return;
-    const caller = gs.callerOrder[gs.callerIndex];
-    const hostId = peerRef.current?.id ?? '';
-    // Only the current caller can call (host enforces)
-    if (caller !== hostId && caller !== num.toString()) {
-      // relayed call is already validated by caller check upstream
-    }
 
     const calledNumbers = [num, ...gs.calledNumbers];
     const nextCallerIndex = (gs.callerIndex + 1) % gs.callerOrder.length;
 
+    // Broadcast FIRST before local state update — peers get it sooner
+    broadcast({
+      type: 'NUMBER_CALLED',
+      payload: { number: num, calledNumbers, nextCallerIndex },
+    });
+
+    // Then update local state
     updateGS(prev => ({ ...prev!, calledNumbers, callerIndex: nextCallerIndex }));
-    broadcast({ type: 'NUMBER_CALLED', payload: { number: num, calledNumbers, nextCallerIndex } });
+
     if (soundRef.current) playDraw();
   }, [broadcast, updateGS]);
 

@@ -219,7 +219,12 @@ export default function GameScreen({
             {/* Number picker */}
             <NumberPicker
               calledNumbers={calledSet}
-              onPick={onCallNumber}
+              onPick={(n) => {
+                // Optimistic update — apply locally immediately, don't wait for round-trip
+                setCard(prev => applyNumber(prev, n));
+                prevCalledRef.current = [n, ...prevCalledRef.current];
+                onCallNumber(n);
+              }}
               isMyTurn={isMyTurn}
               currentCallerName={currentCallerName}
             />

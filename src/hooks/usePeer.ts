@@ -9,7 +9,15 @@ export function roomCodeToPeerId(code: string) {
 
 const PEER_CONFIG = {
   host: '0.peerjs.com', port: 443, secure: true, path: '/',
-  config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
+  pingInterval: 3000,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' },
+    ],
+    iceCandidatePoolSize: 10,
+  },
 };
 
 export type ConnStatus = 'connecting' | 'connected' | 'rejected' | 'disconnected' | 'error';
@@ -119,7 +127,7 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
     peer.on('open', (id) => {
       setMyId(id);
       const hostPeerId = roomCodeToPeerId(roomCode.toUpperCase().trim());
-      const conn = peer.connect(hostPeerId, { reliable: true });
+      const conn = peer.connect(hostPeerId, {reliable: true,serialization: 'json'});
       connRef.current = conn;
 
       conn.on('open', () => {
