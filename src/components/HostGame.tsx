@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useHost } from '../hooks/useHost';
 import GameScreen from './GameScreen';
 
@@ -9,7 +10,8 @@ interface Props {
 }
 
 export default function HostGame({ hostName, soundEnabled, onToggleSound, onQuit }: Props) {
-  const { roomCode, peerReady, error, gameState, myId, actions } = useHost(hostName, soundEnabled);
+  const [totalRounds, setTotalRounds] = useState(5);
+  const { roomCode, peerReady, error, gameState, myId, actions } = useHost(hostName, soundEnabled, totalRounds);
 
   if (error) {
     return (
@@ -47,6 +49,8 @@ export default function HostGame({ hostName, soundEnabled, onToggleSound, onQuit
       onStartGame={actions.startGame}
       onNextRound={actions.nextRound}
       onResetGame={actions.resetGame}
+      totalRounds={totalRounds}                  
+      onSetTotalRounds={setTotalRounds} 
     />
   );
 }

@@ -9,7 +9,7 @@ export function roomCodeToPeerId(code: string) {
 
 const PEER_CONFIG = {
   host: '0.peerjs.com', port: 443, secure: true, path: '/',
-  pingInterval: 3000,
+  pingInterval: 8000,
   config: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -28,6 +28,7 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
+  const claimedRef = useRef(false);
   const peerRef = useRef<Peer | null>(null);
   const connRef = useRef<DataConnection | null>(null);
   const soundRef = useRef(soundEnabled);
@@ -42,6 +43,7 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
         setGameState(prev => prev ? { ...prev, players: msg.payload.players } : null);
         break;
       case 'ROUND_STARTED':
+        claimedRef.current = false;
         setGameState(prev => prev ? {
           ...prev,
           phase: 'playing',
@@ -116,6 +118,8 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
   }, [send]);
 
   const claimBingo = useCallback(() => {
+    if (claimedRef.current) return; // ← add guard
+    claimedRef.current = true;      // ← mark immediately
     resumeAudio();
     send({ type: 'CLAIM_BINGO', payload: { playerId: peerRef.current?.id ?? '', playerName } });
   }, [send, playerName]);

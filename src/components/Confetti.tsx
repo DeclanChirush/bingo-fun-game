@@ -76,7 +76,17 @@ export default function Confetti({ active }: { active: boolean }) {
     const animate = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      if (activeRef.current && particles.current.length < 200 && Math.random() < 0.3) {
+       if (!activeRef.current && particles.current.length === 0) {
+        // Nothing to draw — stop the loop entirely
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        return; // ← don't call requestAnimationFrame
+      }
+
+      // Replace the particle spawn check:
+      const isMobile = window.innerWidth < 640;
+      const maxParticles = isMobile ? 60 : 150; // ← was always 150-200
+
+      if (activeRef.current && particles.current.length < maxParticles && Math.random() < 0.3) {
         particles.current.push(createParticle(canvas));
       }
 

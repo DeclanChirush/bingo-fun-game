@@ -260,3 +260,12 @@
   .bingo-letters { gap: 4px; }
   .bingo-grid { gap: 4px; }
 }
+
+/* Change from infinite to a few iterations then pause: */
+.bingo-cell.callable {
+  animation: callable-pulse 1.4s ease-in-out 3; /* ← was infinite, now 3 times then stops */
+}
+
+.bingo-cell.last-called {
+  animation: last-pulse 0.9s ease-in-out 5; /* ← was infinite */
+}

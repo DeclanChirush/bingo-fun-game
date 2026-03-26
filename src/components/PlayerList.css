@@ -68,3 +68,9 @@
   min-width: 28px;
   text-align: right;
 }
+
+.pl-item.calling {
+  /* Replace animation with a static box-shadow instead */
+  box-shadow: 0 0 14px rgba(0,212,170,0.5);
+  /* Remove: animation: caller-glow ... */
+}

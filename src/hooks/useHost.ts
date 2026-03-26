@@ -4,8 +4,6 @@ import type { GameState, PlayerInfo, HostMsg, PeerMsg } from '../utils/multiplay
 import { generatePool, buildCallerOrder } from '../utils/gameLogic';
 import { playDraw, playBingo, playWin, resumeAudio } from '../utils/sounds';
 
-const TOTAL_ROUNDS = 10;
-
 function makeRoomCode(): string {
   return Array.from({ length: 6 }, () =>
     'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 23)]
@@ -18,7 +16,7 @@ export function roomCodeToPeerId(code: string) {
 
 const PEER_CONFIG = {
   host: '0.peerjs.com', port: 443, secure: true, path: '/',
-  pingInterval: 3000,
+  pingInterval: 8000,
   config: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -29,7 +27,7 @@ const PEER_CONFIG = {
   },
 };
 
-const initGameState = (hostId: string, hostName: string): GameState => ({
+const initGameState = (hostId: string, hostName: string, totalRounds: number): GameState => ({
   phase: 'lobby',
   round: 1,
   players: [{ id: hostId, name: hostName, isHost: true, score: 0 }],
@@ -39,19 +37,25 @@ const initGameState = (hostId: string, hostName: string): GameState => ({
   shuffledPool: [],
   roundWinner: null,
   locked: false,
+  totalRounds
 });
 
-export function useHost(hostName: string, soundEnabled: boolean) {
+export function useHost(hostName: string, soundEnabled: boolean, totalRounds: number) {
   const [roomCode, setRoomCode] = useState('');
   const [peerReady, setPeerReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
 
+  const claimProcessedRef = useRef(false);
   const peerRef = useRef<Peer | null>(null);
   const connsRef = useRef<Map<string, DataConnection>>(new Map());
   const gsRef = useRef<GameState | null>(null);
+
   const soundRef = useRef(soundEnabled);
   useEffect(() => { soundRef.current = soundEnabled; }, [soundEnabled]);
+
+  const totalRoundsRef = useRef(totalRounds);
+  useEffect(() => { totalRoundsRef.current = totalRounds; }, [totalRounds]);
 
   const updateGS = useCallback((updater: (prev: GameState) => GameState) => {
     setGameState(prev => {
@@ -67,6 +71,7 @@ export function useHost(hostName: string, soundEnabled: boolean) {
 
   // ── Start round ─────────────────────────────────────────────
   const startRound = useCallback((gs: GameState) => {
+    claimProcessedRef.current = false;
     const pool = generatePool();
     const playerIds = gs.players.map(p => p.id);
     const callerOrder = buildCallerOrder(playerIds, gs.round);
@@ -126,14 +131,16 @@ export function useHost(hostName: string, soundEnabled: boolean) {
 
   // ── Claim BINGO ──────────────────────────────────────────────
   const processBingoClaim = useCallback((playerId: string, playerName: string) => {
+    if (claimProcessedRef.current) return;
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'playing' || gs.roundWinner) return;
+    claimProcessedRef.current = true;
 
     const scores: Record<string, number> = {};
     gs.players.forEach(p => { scores[p.id] = p.score + (p.id === playerId ? 1 : 0); });
 
     const nextRound = gs.round + 1;
-    const isGameOver = nextRound > TOTAL_ROUNDS;
+    const isGameOver = nextRound > gs.totalRounds;
 
     const next: GameState = {
       ...gs,
@@ -218,7 +225,7 @@ export function useHost(hostName: string, soundEnabled: boolean) {
     if (!gs) return;
     const hostId = peerRef.current?.id ?? '';
     const reset: GameState = {
-      ...initGameState(hostId, gs.players.find(p => p.isHost)?.name ?? hostName),
+      ...initGameState(hostId, gs.players.find(p => p.isHost)?.name ?? hostName, gs.totalRounds),
       players: gs.players.map(p => ({ ...p, score: 0 })),
       locked: false,
     };
@@ -234,7 +241,7 @@ export function useHost(hostName: string, soundEnabled: boolean) {
     peerRef.current = peer;
 
     peer.on('open', (id) => {
-      const gs = initGameState(id, hostName);
+      const gs = initGameState(id, hostName, totalRoundsRef.current);
       gsRef.current = gs;
       setGameState(gs);
       setRoomCode(code);
