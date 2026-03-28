@@ -151,14 +151,14 @@
 
 /* Pick mode — uncalled cells are tappable to broadcast */
 .bingo-cell.pick-mode {
-  border-color: rgba(255, 215, 0, 0.35);
-  background: rgba(255, 215, 0, 0.07);
+  border-color: rgba(100, 220, 120, 0.45);
+  background: rgba(100, 220, 120, 0.08);
   cursor: pointer;
 }
-.bingo-cell.pick-mode .cell-num { color: rgba(255, 215, 0, 0.8); }
+.bingo-cell.pick-mode .cell-num { color: rgba(140, 240, 140, 0.9); }
 .bingo-cell.pick-mode:not(:disabled):hover {
-  background: rgba(255, 215, 0, 0.2);
-  border-color: rgba(255, 215, 0, 0.7);
+  background: rgba(100, 220, 120, 0.2);
+  border-color: rgba(100, 220, 120, 0.8);
   transform: scale(1.06);
 }
 .bingo-cell.pick-mode:not(:disabled):active {
