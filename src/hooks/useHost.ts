@@ -16,7 +16,7 @@ export function roomCodeToPeerId(code: string) {
 
 const PEER_CONFIG = {
   host: '0.peerjs.com', port: 443, secure: true, path: '/',
-  pingInterval: 8000,
+  pingInterval: 5000,
   config: {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -26,6 +26,10 @@ const PEER_CONFIG = {
     iceCandidatePoolSize: 10,
   },
 };
+
+// Heartbeat: how long before we declare a peer gone
+const HEARTBEAT_INTERVAL = 5000;
+const HEARTBEAT_TIMEOUT = 15000;
 
 function initGameState(hostId: string, hostName: string, totalRounds: number): GameState {
   return {
@@ -50,11 +54,8 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
 
   const peerRef = useRef<Peer | null>(null);
   const connsRef = useRef<Map<string, DataConnection>>(new Map());
-
-  // Single source of truth for game state — always in sync
   const gsRef = useRef<GameState | null>(null);
 
-  // Guards
   const claimProcessedRef = useRef(false);
   const nextRoundLockedRef = useRef(false);
 
@@ -64,8 +65,11 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   const totalRoundsRef = useRef(totalRounds);
   useEffect(() => { totalRoundsRef.current = totalRounds; }, [totalRounds]);
 
-  // ── Helpers ──────────────────────────────────────────────────
-  // Commit a new game state to both ref and React state
+  // Heartbeat: track last message timestamp per peer
+  const lastSeenRef = useRef<Map<string, number>>(new Map());
+  const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Helpers ──────────────────────────────────────────────
   const commitGS = (next: GameState) => {
     gsRef.current = next;
     setGameState(next);
@@ -75,12 +79,37 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     connsRef.current.forEach(conn => { if (conn.open) conn.send(msg); });
   }, []);
 
-  // sendTo a single connection (used for JOIN responses)
   const sendTo = (conn: DataConnection, msg: HostMsg) => {
     if (conn.open) conn.send(msg);
   };
 
-  // ── Start round ──────────────────────────────────────────────
+  // ── Heartbeat system (FIX #4) ─────────────────────────────
+  const startHeartbeat = useCallback(() => {
+    if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
+    heartbeatTimerRef.current = setInterval(() => {
+      broadcast({ type: 'PING', payload: { ts: Date.now() } });
+
+      const now = Date.now();
+      const timedOut: string[] = [];
+      connsRef.current.forEach((conn, peerId) => {
+        const last = lastSeenRef.current.get(peerId) ?? now;
+        if (now - last > HEARTBEAT_TIMEOUT) timedOut.push(peerId);
+      });
+
+      timedOut.forEach(peerId => {
+        connsRef.current.get(peerId)?.close();
+        connsRef.current.delete(peerId);
+        lastSeenRef.current.delete(peerId);
+        const gs = gsRef.current;
+        if (!gs) return;
+        const players = gs.players.filter(p => p.id !== peerId);
+        commitGS({ ...gs, players });
+        broadcast({ type: 'PLAYER_LIST', payload: { players } });
+      });
+    }, HEARTBEAT_INTERVAL);
+  }, [broadcast]);
+
+  // ── Start round ──────────────────────────────────────────
   const startRound = useCallback((gs: GameState) => {
     claimProcessedRef.current = false;
     nextRoundLockedRef.current = false;
@@ -107,7 +136,7 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     });
   }, [broadcast]);
 
-  // ── Call a number ────────────────────────────────────────────
+  // ── Call a number ────────────────────────────────────────
   const callNumber = useCallback((num: number) => {
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'playing') return;
@@ -127,11 +156,7 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     if (soundRef.current) playDraw();
   }, [broadcast]);
 
-  // ── Claim BINGO ──────────────────────────────────────────────
-  // Tie-break rule:
-  //   1. If the caller themselves has bingo → they win.
-  //   2. Otherwise the first claimer in *remaining* caller-turn order wins.
-  //      (i.e. whoever is next in line to call after the current caller.)
+  // ── Claim BINGO ──────────────────────────────────────────
   const pendingClaimsRef = useRef<{ id: string; name: string }[]>([]);
   const claimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -143,13 +168,10 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
 
     const claims = pendingClaimsRef.current;
     pendingClaimsRef.current = [];
-
     if (claims.length === 0) return;
 
-    // Determine winner by caller-order priority:
-    // current caller first, then next in rotation
     const { callerOrder, callerIndex } = gs;
-    let winner = claims[0]; // fallback: first to claim
+    let winner = claims[0];
 
     for (let offset = 0; offset < callerOrder.length; offset++) {
       const idx = (callerIndex + offset) % callerOrder.length;
@@ -192,27 +214,21 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'playing' || gs.roundWinner) return;
     if (claimProcessedRef.current) return;
-
-    // Avoid duplicate claims from the same player
     if (pendingClaimsRef.current.some(c => c.id === playerId)) return;
     pendingClaimsRef.current.push({ id: playerId, name: playerName });
-
-    // Wait a short window to collect simultaneous claims, then resolve
     if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
-    claimTimerRef.current = setTimeout(() => {
-      resolveClaims();
-    }, 150);
+    claimTimerRef.current = setTimeout(() => { resolveClaims(); }, 150);
   }, [resolveClaims]);
 
-  // ── Connection message handler (via ref — never stale) ───────
-  // IMPORTANT: We define this as a plain ref-assigned function (NOT useCallback)
-  // so the conn.on('data') listener, registered once on connect, always calls
-  // the absolute latest version. This is the root cause of the original "stuck
-  // after round" bug — stale useCallback closures captured old state.
+  // ── Message handler ───────────────────────────────────────
   const msgHandlerRef = useRef<(conn: DataConnection, msg: PeerMsg) => void>(() => {});
 
-  // Re-assign on every render (cheap, not a hook)
   msgHandlerRef.current = (conn: DataConnection, msg: PeerMsg) => {
+    // Update heartbeat on ANY message from this peer
+    lastSeenRef.current.set(conn.peer, Date.now());
+
+    if (msg.type === 'PONG') return; // heartbeat reply, timestamp updated above
+
     if (msg.type === 'JOIN_REQUEST') {
       const gs = gsRef.current;
       if (gs?.locked) {
@@ -252,7 +268,7 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     }
   };
 
-  // ── Host-side actions ────────────────────────────────────────
+  // ── Host-side actions ────────────────────────────────────
   const hostCallNumber = useCallback((num: number) => {
     resumeAudio();
     const gs = gsRef.current;
@@ -270,10 +286,13 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     queueBingoClaim(hostId, resolvedName);
   }, [queueBingoClaim, hostName]);
 
+  // BUG FIX #1: Apply totalRoundsRef.current into gameState before starting
   const startGame = useCallback(() => {
     const gs = gsRef.current;
     if (!gs) return;
-    startRound(gs);
+    const gsWithRounds: GameState = { ...gs, totalRounds: totalRoundsRef.current };
+    commitGS(gsWithRounds);
+    startRound(gsWithRounds);
   }, [startRound]);
 
   const nextRound = useCallback(() => {
@@ -281,11 +300,8 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     const gs = gsRef.current;
     if (!gs || gs.phase !== 'round_end') return;
     nextRoundLockedRef.current = true;
-
-    // Increment round then start
     const nextGs: GameState = { ...gs, round: gs.round + 1 };
     commitGS(nextGs);
-    // Small delay so React flushes before we broadcast ROUND_STARTED
     setTimeout(() => startRound(nextGs), 50);
   }, [startRound]);
 
@@ -306,7 +322,26 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     broadcast({ type: 'GAME_RESET', payload: {} });
   }, [broadcast, hostName]);
 
-  // ── Init Peer ────────────────────────────────────────────────
+  // ── Page Visibility (FIX #4) ──────────────────────────────
+  // When host screen comes back on, re-sync all peers with current state.
+  // We do NOT destroy the peer on visibility hidden — destroying = everyone disconnects.
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        resumeAudio();
+        const gs = gsRef.current;
+        if (gs) {
+          connsRef.current.forEach(conn => {
+            if (conn.open) conn.send({ type: 'FULL_STATE', payload: gs } as HostMsg);
+          });
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
+  // ── Init Peer ────────────────────────────────────────────
   useEffect(() => {
     const code = makeRoomCode();
     const peer = new Peer(roomCodeToPeerId(code), PEER_CONFIG);
@@ -317,30 +352,33 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
       commitGS(gs);
       setRoomCode(code);
       setPeerReady(true);
+      startHeartbeat();
     });
 
     peer.on('error', err => setError(`Connection error: ${err.type}`));
 
     peer.on('connection', conn => {
-      conn.on('open', () => connsRef.current.set(conn.peer, conn));
+      conn.on('open', () => {
+        connsRef.current.set(conn.peer, conn);
+        lastSeenRef.current.set(conn.peer, Date.now());
+      });
 
-      // Route through ref — always calls the latest msgHandlerRef.current
-      // This avoids stale closures on callNumber / queueBingoClaim
       conn.on('data', data => msgHandlerRef.current(conn, data as PeerMsg));
 
       conn.on('close', () => {
         connsRef.current.delete(conn.peer);
+        lastSeenRef.current.delete(conn.peer);
         const gs = gsRef.current;
         if (!gs) return;
         const players = gs.players.filter(p => p.id !== conn.peer);
-        const next = { ...gs, players };
-        commitGS(next);
+        commitGS({ ...gs, players });
         broadcast({ type: 'PLAYER_LIST', payload: { players } });
       });
     });
 
     return () => {
       if (claimTimerRef.current) clearTimeout(claimTimerRef.current);
+      if (heartbeatTimerRef.current) clearInterval(heartbeatTimerRef.current);
       peer.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

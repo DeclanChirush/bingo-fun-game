@@ -7,11 +7,26 @@ interface Props {
   soundEnabled: boolean;
   onToggleSound: () => void;
   onQuit: () => void;
+  onGameComplete?: (numPlayers: number, numRounds: number) => void;
 }
 
-export default function HostGame({ hostName, soundEnabled, onToggleSound, onQuit }: Props) {
+export default function HostGame({ hostName, soundEnabled, onToggleSound, onQuit, onGameComplete }: Props) {
   const [totalRounds, setTotalRounds] = useState(5);
   const { roomCode, peerReady, error, gameState, myId, actions } = useHost(hostName, soundEnabled, totalRounds);
+
+  // Track if we've already recorded this game to avoid double-counting
+  const [recorded, setRecorded] = useState(false);
+
+  // When game reaches game_over, record stats once
+  if (gameState?.phase === 'game_over' && !recorded && onGameComplete) {
+    setRecorded(true);
+    onGameComplete(gameState.players.length, gameState.totalRounds);
+  }
+
+  // Reset recorded flag when game resets
+  if (gameState?.phase === 'lobby' && recorded) {
+    setRecorded(false);
+  }
 
   if (error) {
     return (
@@ -49,8 +64,8 @@ export default function HostGame({ hostName, soundEnabled, onToggleSound, onQuit
       onStartGame={actions.startGame}
       onNextRound={actions.nextRound}
       onResetGame={actions.resetGame}
-      totalRounds={totalRounds}                  
-      onSetTotalRounds={setTotalRounds} 
+      totalRounds={totalRounds}
+      onSetTotalRounds={setTotalRounds}
     />
   );
 }

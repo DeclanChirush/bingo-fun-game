@@ -24,19 +24,19 @@ export type GamePhase =
   | 'round_start'  // brief countdown before round
   | 'playing'      // active round
   | 'round_end'    // someone won the round
-  | 'game_over';   // all 10 rounds done
+  | 'game_over';   // all rounds done
 
 export interface GameState {
   phase: GamePhase;
-  round: number;          // 1–10
+  round: number;
   players: PlayerInfo[];
-  callerOrder: string[];  // player IDs in calling order for this round
-  callerIndex: number;    // whose turn it is to call
+  callerOrder: string[];
+  callerIndex: number;
   calledNumbers: number[];
-  shuffledPool: number[]; // 1-25 shuffled for this round
-  roundWinner: string | null; // playerId
-  locked: boolean;        // no new joins once started
-  totalRounds: number; // rounds
+  shuffledPool: number[];
+  roundWinner: string | null;
+  locked: boolean;
+  totalRounds: number;
 }
 
 // ── Messages ─────────────────────────────────────────────────
@@ -50,10 +50,12 @@ export type HostMsg =
   | { type: 'ROUND_WON'; payload: { winnerId: string; winnerName: string; scores: Record<string, number> } }
   | { type: 'GAME_OVER'; payload: { scores: Record<string, number> } }
   | { type: 'GAME_RESET'; payload: Record<string, never> }
-  | { type: 'JOIN_REJECTED'; payload: { reason: string } };
+  | { type: 'JOIN_REJECTED'; payload: { reason: string } }
+  | { type: 'PING'; payload: { ts: number } };  // FIX #4: heartbeat
 
 // Peer → host
 export type PeerMsg =
   | { type: 'JOIN_REQUEST'; payload: { name: string } }
   | { type: 'CALL_NUMBER'; payload: { number: number; callerId: string } }
-  | { type: 'CLAIM_BINGO'; payload: { playerId: string; playerName: string } };
+  | { type: 'CLAIM_BINGO'; payload: { playerId: string; playerName: string } }
+  | { type: 'PONG'; payload: { ts: number } };  // FIX #4: heartbeat reply
