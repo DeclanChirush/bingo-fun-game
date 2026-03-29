@@ -77,3 +77,95 @@ export function resumeAudio() {
     audioCtx.resume();
   }
 }
+
+// 😢 Sad Trombone — classic "wah wah wah wahhh"
+export function playSadTrombone() {
+  const ctx = getCtx();
+  const now = ctx.currentTime;
+  const notes = [
+    { freq: 466, dur: 0.22, start: 0.0 },
+    { freq: 440, dur: 0.22, start: 0.22 },
+    { freq: 415, dur: 0.22, start: 0.44 },
+    { freq: 349, dur: 0.7,  start: 0.66 },
+  ];
+  notes.forEach(({ freq, dur, start }) => {
+    playTone(freq, 'sawtooth', dur, 0.38, now + start, ctx);
+    playTone(freq * 0.5, 'sine', dur, 0.18, now + start, ctx);
+  });
+}
+
+// 😂 Crowd Laugh — short rhythmic "haha" burst
+export function playCrowdLaugh() {
+  const ctx = getCtx();
+  const now = ctx.currentTime;
+  // Simulate laughter with noise-like bursts
+  for (let i = 0; i < 6; i++) {
+    const t = now + i * 0.18;
+    playTone(200 + Math.random() * 80, 'sawtooth', 0.1, 0.25, t, ctx);
+    playTone(400 + Math.random() * 60, 'sine', 0.08, 0.12, t + 0.04, ctx);
+  }
+}
+
+// 😱 Dramatic sting — "DUN DUN DUUUN"
+export function playDramaticSting() {
+  const ctx = getCtx();
+  const now = ctx.currentTime;
+  playTone(220, 'sawtooth', 0.2, 0.5, now, ctx);
+  playTone(220, 'sawtooth', 0.2, 0.5, now + 0.28, ctx);
+  playTone(185, 'sawtooth', 0.8, 0.55, now + 0.56, ctx);
+  playTone(92, 'sine', 0.8, 0.3, now + 0.56, ctx);
+}
+
+// 🎺 Airhorn — meme classic
+export function playAirhorn() {
+  const ctx = getCtx();
+  const now = ctx.currentTime;
+  // Airhorn: high sawtooth with quick decay
+  for (let i = 0; i < 3; i++) {
+    const t = now + i * 0.35;
+    playTone(880, 'sawtooth', 0.3, 0.5, t, ctx);
+    playTone(1100, 'sawtooth', 0.25, 0.3, t, ctx);
+    playTone(660, 'sawtooth', 0.28, 0.2, t, ctx);
+  }
+}
+
+// 🥁 Drum roll then crash — for suspense before results
+export function playDrumRoll(durationMs = 1200) {
+  const ctx = getCtx();
+  const now = ctx.currentTime;
+  const beats = Math.floor(durationMs / 60);
+  for (let i = 0; i < beats; i++) {
+    const t = now + (i * 0.06) * (1 - i / (beats * 1.5));
+    playTone(120 + Math.random() * 20, 'square', 0.04, 0.3 + (i / beats) * 0.2, t, ctx);
+  }
+  // Crash
+  const crashTime = now + durationMs / 1000;
+  playTone(800, 'sawtooth', 0.5, 0.5, crashTime, ctx);
+  playTone(400, 'sawtooth', 0.5, 0.3, crashTime, ctx);
+  playTone(200, 'sine', 0.6, 0.2, crashTime, ctx);
+}
+
+// 🎵 Suspense rising tone
+export function playSuspense() {
+  const ctx = getCtx();
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(200, now);
+  osc.frequency.linearRampToValueAtTime(800, now + 1.2);
+  gain.gain.setValueAtTime(0.3, now);
+  gain.gain.linearRampToValueAtTime(0.5, now + 1.0);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+  osc.start(now);
+  osc.stop(now + 1.4);
+}
+
+// Pick a random loser sound
+const LOSER_SOUNDS = [playSadTrombone, playCrowdLaugh, playDramaticSting];
+export function playLoserSound() {
+  const fn = LOSER_SOUNDS[Math.floor(Math.random() * LOSER_SOUNDS.length)];
+  fn();
+}

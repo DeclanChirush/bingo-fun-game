@@ -12,7 +12,7 @@ interface Props {
 
 export default function HostGame({ hostName, soundEnabled, onToggleSound, onQuit, onGameComplete }: Props) {
   const [totalRounds, setTotalRounds] = useState(5);
-  const { roomCode, peerReady, error, gameState, myId, actions } = useHost(hostName, soundEnabled, totalRounds);
+  const { roomCode, peerReady, error, gameState, myId, incomingReaction, actions } = useHost(hostName, soundEnabled, totalRounds);
   const recordedRef = useRef(false);
 
   // Record stats once when game ends
@@ -62,6 +62,8 @@ export default function HostGame({ hostName, soundEnabled, onToggleSound, onQuit
       onResetGame={actions.resetGame}
       totalRounds={totalRounds}
       onSetTotalRounds={setTotalRounds}
+      onSendReaction={actions.sendEmojiReact}
+      incomingReaction={incomingReaction}
     />
   );
 }

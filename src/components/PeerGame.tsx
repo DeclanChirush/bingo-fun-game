@@ -24,7 +24,7 @@ const centerStyle = {
 };
 
 export default function PeerGame({ roomCode, playerName, soundEnabled, onToggleSound, onQuit }: Props) {
-  const { status, myId, gameState, rejectReason, actions } = usePeer(roomCode, playerName, soundEnabled);
+  const { status, myId, gameState, rejectReason, incomingReaction, actions } = usePeer(roomCode, playerName, soundEnabled);
 
   if (status === 'connecting') {
     return (
@@ -95,6 +95,8 @@ export default function PeerGame({ roomCode, playerName, soundEnabled, onToggleS
       onQuit={onQuit}
       onCallNumber={actions.callNumber}
       onClaimBingo={actions.claimBingo}
+      onSendReaction={actions.sendEmojiReact}
+      incomingReaction={incomingReaction}
     />
   );
 }
