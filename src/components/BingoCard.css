@@ -25,13 +25,13 @@
   background: color-mix(in srgb, var(--lc) 18%, transparent);
   border: 2px solid color-mix(in srgb, var(--lc) 35%, transparent);
   overflow: hidden;
-  transition: all 0.3s;
+  /* No transition — saves repaints */
 }
 
 .bingo-letter.crossed-letter {
   background: color-mix(in srgb, var(--lc) 30%, transparent);
   border-color: var(--lc);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--lc) 55%, transparent);
+  /* Removed box-shadow glow — saves GPU compositing */
 }
 
 .letter-text {
@@ -40,7 +40,7 @@
   color: var(--lc);
   position: relative;
   z-index: 2;
-  transition: opacity 0.3s;
+  -webkit-font-smoothing: antialiased;
 }
 .crossed-letter .letter-text { opacity: 0.4; }
 
@@ -52,26 +52,25 @@
   border-radius: 2px;
   transform: translateY(-50%);
   z-index: 3;
-  animation: strike-in 0.35s ease;
+  animation: strike-in 0.3s ease forwards;
 }
 @keyframes strike-in {
   from { transform: translateY(-50%) scaleX(0); }
   to   { transform: translateY(-50%) scaleX(1); }
 }
 
-/* ── Pick mode banner ──────────────────────────────────────── */
+/* ── Pick / turn banner ────────────────────────────────────── */
 .pick-banner {
   text-align: center;
   padding: 8px 14px;
   border-radius: 12px;
   font-size: 0.83rem;
   font-weight: 700;
-  transition: all 0.3s;
 }
 .pick-banner-active {
-  background: rgba(0, 212, 170, 0.12);
-  border: 1.5px solid rgba(0, 212, 170, 0.45);
-  color: #00d4aa;
+  background: rgba(100, 220, 120, 0.12);
+  border: 1.5px solid rgba(100, 220, 120, 0.45);
+  color: #64dc78;
 }
 .pick-banner-active strong { color: #fff; }
 .pick-banner-waiting {
@@ -80,6 +79,13 @@
   color: rgba(255,255,255,0.45);
 }
 .pick-banner-waiting strong { color: rgba(255,255,255,0.75); }
+/* After calling — my turn but waiting for next cycle */
+.pick-banner-waiting-turn {
+  background: rgba(0, 212, 170, 0.08);
+  border: 1.5px solid rgba(0, 212, 170, 0.3);
+  color: rgba(0, 212, 170, 0.8);
+}
+.pick-banner-waiting-turn strong { color: #00d4aa; }
 
 /* ── Refresh button ────────────────────────────────────────── */
 .refresh-btn {
@@ -93,21 +99,13 @@
   font-weight: 800;
   font-size: 0.85rem;
   cursor: pointer;
-  transition: all 0.18s;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
-.refresh-btn:hover {
-  background: rgba(255,255,255,0.14);
-  border-color: rgba(255,255,255,0.32);
-  color: #fff;
-  transform: translateY(-1px);
-}
-.refresh-btn:active { transform: translateY(0); }
+.refresh-btn:active { opacity: 0.7; }
 
-/* ── Grid wrapper (for SVG diagonal overlay) ───────────────── */
-.grid-wrapper {
-  position: relative;
-}
+/* ── Grid wrapper ──────────────────────────────────────────── */
+.grid-wrapper { position: relative; }
 
 /* ── 5×5 Grid ──────────────────────────────────────────────── */
 .bingo-grid {
@@ -118,7 +116,7 @@
   position: relative;
 }
 
-/* ── Cell ──────────────────────────────────────────────────── */
+/* ── Cell base ─────────────────────────────────────────────── */
 .bingo-cell {
   position: relative;
   aspect-ratio: 1;
@@ -131,11 +129,10 @@
   overflow: hidden;
   padding: 0;
   cursor: default;
-  /* PERFORMANCE: use transform instead of box-shadow for transitions */
-  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  /* Only transition background+border — NO box-shadow transitions (expensive) */
+  transition: background 0.12s, border-color 0.12s;
   -webkit-tap-highlight-color: transparent;
-  /* PERFORMANCE: hint to browser to promote to composited layer only when needed */
-  will-change: auto;
+  touch-action: manipulation;
 }
 
 .cell-num {
@@ -144,55 +141,42 @@
   color: rgba(255,255,255,0.5);
   position: relative;
   z-index: 2;
-  transition: color 0.2s;
-  /* PERFORMANCE: prevent subpixel text re-renders */
   -webkit-font-smoothing: antialiased;
 }
 
-/* Pick mode — uncalled cells are tappable to broadcast */
+/* ── Pick mode (my turn, uncalled = green) ─────────────────── */
 .bingo-cell.pick-mode {
-  border-color: rgba(100, 220, 120, 0.45);
-  background: rgba(100, 220, 120, 0.08);
+  border-color: rgba(100, 220, 120, 0.5);
+  background: rgba(100, 220, 120, 0.1);
   cursor: pointer;
 }
-.bingo-cell.pick-mode .cell-num { color: rgba(140, 240, 140, 0.9); }
-.bingo-cell.pick-mode:not(:disabled):hover {
-  background: rgba(100, 220, 120, 0.2);
-  border-color: rgba(100, 220, 120, 0.8);
-  transform: scale(1.06);
-}
-.bingo-cell.pick-mode:not(:disabled):active {
-  transform: scale(0.94);
-}
+.bingo-cell.pick-mode .cell-num { color: rgba(140, 240, 140, 0.95); }
+.bingo-cell.pick-mode:not(:disabled):active { opacity: 0.7; }
 
-/* Called but not yet crossed — clickable */
+/* ── Called but not crossed — tappable to mark ─────────────── */
 .bingo-cell.callable {
   border-color: rgba(0,212,170,0.55);
   background: rgba(0,212,170,0.1);
   cursor: pointer;
 }
 .bingo-cell.callable .cell-num { color: #00d4aa; }
-.bingo-cell.callable:not(:disabled):hover {
-  background: rgba(0,212,170,0.22);
-  border-color: rgba(0,212,170,0.85);
-  transform: scale(1.06);
-}
+.bingo-cell.callable:not(:disabled):active { opacity: 0.75; }
 
-/* Latest called number — PERFORMANCE: use finite animation not infinite */
+/* ── Last called number (brief highlight, NO infinite pulse) ── */
 .bingo-cell.last-called {
   border-color: #ffd700;
   background: rgba(255,215,0,0.18);
-  /* 4 pulses then stays lit — no infinite drain */
-  animation: last-pulse 0.9s ease-in-out 4 alternate;
+  /* Finite: 3 quick flashes then stops — much cheaper than infinite */
+  animation: last-flash 0.5s ease 3;
   cursor: pointer;
 }
 .bingo-cell.last-called .cell-num { color: #ffd700; }
-@keyframes last-pulse {
-  from { box-shadow: 0 0 7px rgba(255,215,0,0.45); }
-  to   { box-shadow: 0 0 22px rgba(255,215,0,0.95); }
+@keyframes last-flash {
+  0%, 100% { background: rgba(255,215,0,0.18); }
+  50%       { background: rgba(255,215,0,0.38); }
 }
 
-/* Crossed */
+/* ── Crossed ───────────────────────────────────────────────── */
 .bingo-cell.crossed {
   background: rgba(255,100,100,0.12);
   border-color: rgba(255,100,100,0.4);
@@ -207,32 +191,30 @@
   stroke: #ff6b6b;
   stroke-width: 4;
   fill: none;
-  animation: cross-pop 0.22s ease-out;
+  animation: cross-pop 0.2s ease-out forwards;
 }
 @keyframes cross-pop {
   from { opacity: 0; transform: scale(0.5); }
   to   { opacity: 1; transform: scale(1); }
 }
 
-/* Cell on a completed line — golden tint */
+/* ── On a completed line ───────────────────────────────────── */
 .bingo-cell.on-line {
   background: rgba(255,215,0,0.1);
   border-color: rgba(255,215,0,0.35);
 }
 .bingo-cell.on-line.crossed .cross-svg { stroke: #ffd700; }
 
-/* Wrong cell flash */
+/* ── Wrong cell flash ──────────────────────────────────────── */
 .bingo-cell.wrong-flash {
-  animation: wrong-shake 0.4s ease !important;
+  animation: wrong-shake 0.35s ease !important;
   border-color: rgba(255,60,60,0.85) !important;
   background: rgba(255,40,40,0.2) !important;
 }
 @keyframes wrong-shake {
   0%,100% { transform: translateX(0); }
-  20% { transform: translateX(-5px); }
-  40% { transform: translateX(5px); }
-  60% { transform: translateX(-4px); }
-  80% { transform: translateX(4px); }
+  25%      { transform: translateX(-5px); }
+  75%      { transform: translateX(5px); }
 }
 
 /* ── Row strikethrough ─────────────────────────────────────── */
@@ -245,8 +227,7 @@
   border-radius: 2px;
   z-index: 10;
   pointer-events: none;
-  box-shadow: 0 0 8px rgba(255,215,0,0.6);
-  animation: h-grow 0.4s ease;
+  animation: h-grow 0.35s ease forwards;
 }
 @keyframes h-grow {
   from { transform: scaleX(0); }
@@ -263,8 +244,7 @@
   border-radius: 2px;
   z-index: 10;
   pointer-events: none;
-  box-shadow: 0 0 8px rgba(196,77,255,0.55);
-  animation: v-grow 0.4s ease;
+  animation: v-grow 0.35s ease forwards;
 }
 @keyframes v-grow {
   from { transform: scaleY(0); }
@@ -280,31 +260,27 @@
   z-index: 11;
   overflow: visible;
 }
-
 .diag-overlay line {
-  filter: drop-shadow(0 0 5px rgba(255,215,0,0.7));
-  animation: diag-draw 0.5s ease;
+  animation: diag-draw 0.45s ease forwards;
   stroke-dasharray: 150;
   stroke-dashoffset: 0;
 }
-
 @keyframes diag-draw {
   from { stroke-dashoffset: 150; }
   to   { stroke-dashoffset: 0; }
 }
 
-/* ── Mobile ────────────────────────────────────────────────── */
+/* ── Mobile tweaks ─────────────────────────────────────────── */
 @media (max-width: 400px) {
   .bingo-cell { border-radius: 8px; }
   .bingo-letter { height: 34px; }
   .letter-text { font-size: 1.15rem; }
-  .cell-num { font-size: 0.78rem; }
   .bingo-letters { gap: 4px; }
   .bingo-grid { gap: 4px; }
   .pick-banner { font-size: 0.75rem; padding: 6px 10px; }
 }
 
-/* PERFORMANCE: reduce motion for battery/heat saving */
+/* ── Kill ALL animations on reduced-motion ─────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .bingo-cell,
   .cross-svg,

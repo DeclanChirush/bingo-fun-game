@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useHost } from '../hooks/useHost';
 import GameScreen from './GameScreen';
 
@@ -7,25 +7,21 @@ interface Props {
   soundEnabled: boolean;
   onToggleSound: () => void;
   onQuit: () => void;
-  onGameComplete?: (numPlayers: number, numRounds: number) => void;
+  onGameComplete?: (numPlayers: number, numRounds: number) => Promise<void>;
 }
 
 export default function HostGame({ hostName, soundEnabled, onToggleSound, onQuit, onGameComplete }: Props) {
   const [totalRounds, setTotalRounds] = useState(5);
   const { roomCode, peerReady, error, gameState, myId, actions } = useHost(hostName, soundEnabled, totalRounds);
+  const recordedRef = useRef(false);
 
-  // Track if we've already recorded this game to avoid double-counting
-  const [recorded, setRecorded] = useState(false);
-
-  // When game reaches game_over, record stats once
-  if (gameState?.phase === 'game_over' && !recorded && onGameComplete) {
-    setRecorded(true);
-    onGameComplete(gameState.players.length, gameState.totalRounds);
+  // Record stats once when game ends
+  if (gameState?.phase === 'game_over' && !recordedRef.current) {
+    recordedRef.current = true;
+    onGameComplete?.(gameState.players.length, gameState.totalRounds);
   }
-
-  // Reset recorded flag when game resets
-  if (gameState?.phase === 'lobby' && recorded) {
-    setRecorded(false);
+  if (gameState?.phase === 'lobby' && recordedRef.current) {
+    recordedRef.current = false;
   }
 
   if (error) {
