@@ -5,7 +5,10 @@ import BingoCard from './BingoCard';
 import PlayerList from './PlayerList';
 import QuitModal from './QuitModal';
 import Confetti from './Confetti';
-import { playMark, playWin, resumeAudio } from '../utils/sounds';
+import LoserReaction from './LoserReaction';
+import EmojiReactions from './EmojiReactions';
+import SuspenseReveal from './SuspenseReveal';
+import { playMark, playWin, playLoserSound, playSuspense, resumeAudio } from '../utils/sounds';
 import './GameScreen.css';
 
 interface Props {
@@ -24,12 +27,15 @@ interface Props {
   onResetGame?: () => void;
   totalRounds?: number;
   onSetTotalRounds?: (n: number) => void;
+  onSendReaction?: (emoji: string) => void;
+  incomingReaction?: { emoji: string; name: string; id: number } | null;
 }
 
 export default function GameScreen({
   myId, playerName, roomCode, isHost, gameState, soundEnabled,
   onToggleSound, onQuit, onCallNumber, onClaimBingo,
   onStartGame, onNextRound, onResetGame, totalRounds = 5, onSetTotalRounds,
+  onSendReaction, incomingReaction,
 }: Props) {
   const [card, setCard] = useState<CardState>(() => generateCard());
   const [showQuit, setShowQuit] = useState(false);
@@ -37,6 +43,8 @@ export default function GameScreen({
   const [confetti, setConfetti] = useState(false);
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [showLoserReaction, setShowLoserReaction] = useState(false);
+  const [suspenseNumber, setSuspenseNumber] = useState<number | null>(null);
 
   const lastRoundStartedRef = useRef<number>(0);
   const prevCalledRef = useRef<number[]>([]);
@@ -89,12 +97,17 @@ export default function GameScreen({
     const newNums = calledNumbers.filter(n => !prev.has(n));
     if (newNums.length === 0) return;
     prevCalledRef.current = [...calledNumbers];
+    // Trigger suspense reveal for the newest number (first in array = latest)
+    if (newNums.length > 0) {
+      setSuspenseNumber(calledNumbers[0]);
+      if (soundEnabled) playSuspense();
+    }
     setCard(prevCard => {
       let updated = prevCard;
       for (const n of newNums) updated = applyNumber(updated, n);
       return updated;
     });
-  }, [calledNumbers, phase]);
+  }, [calledNumbers, phase, soundEnabled]);
 
   // ── Auto-bingo detection ─────────────────────────────────────
   useEffect(() => {
@@ -108,11 +121,20 @@ export default function GameScreen({
     }
   }, [card, wonRound, phase, onClaimBingo, soundEnabled, hasWon]);
 
-  // ── Confetti ─────────────────────────────────────────────────
+  // ── Confetti + loser reaction ─────────────────────────────────
   useEffect(() => {
-    if ((phase === 'round_end' || phase === 'game_over') && iWon) setConfetti(true);
-    else if (phase === 'round_end' || phase === 'game_over') setConfetti(false);
-  }, [phase, iWon]);
+    if ((phase === 'round_end' || phase === 'game_over') && iWon) {
+      setConfetti(true);
+      setShowLoserReaction(false);
+    } else if (phase === 'round_end' || phase === 'game_over') {
+      setConfetti(false);
+      setShowLoserReaction(true);
+      if (soundEnabled) setTimeout(() => playLoserSound(), 400);
+    }
+    if (phase === 'playing') {
+      setShowLoserReaction(false);
+    }
+  }, [phase, iWon, soundEnabled]);
 
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = useCallback((msg: string) => {
@@ -277,9 +299,23 @@ export default function GameScreen({
               }
               <p className="called-count">{calledNumbers.length}/25 called</p>
             </div>
+
+            {/* 🎉 Emoji Reactions */}
+            {onSendReaction && (
+              <EmojiReactions
+                onSendReaction={onSendReaction}
+                incomingReaction={incomingReaction ?? null}
+              />
+            )}
           </div>
 
           <div className="right-panel">
+            {/* 🎲 Suspense number reveal */}
+            <SuspenseReveal
+              number={suspenseNumber}
+              callerName={currentCallerName}
+            />
+
             <BingoCard
               card={card}
               lastCalledNumber={lastCalled}
@@ -307,6 +343,16 @@ export default function GameScreen({
             <div className="phase-emoji">{iWon ? '🏆' : '😢'}</div>
             <h2>{iWon ? 'You Won the Round!' : `${roundWinnerName} Wins!`}</h2>
             <p className="phase-sub">Round {round} of {gameState.totalRounds} complete</p>
+
+            {/* 😭 Loser reaction for non-winners */}
+            {!iWon && (
+              <LoserReaction
+                rank={[...players].sort((a, b) => b.score - a.score).findIndex(p => p.id === myId)}
+                winnerName={roundWinnerName}
+                visible={showLoserReaction}
+              />
+            )}
+
             <div className="scores-list">
               {[...players].sort((a, b) => b.score - a.score).map((p, i) => (
                 <div key={p.id} className={`score-row ${p.id === myId ? 'me' : ''}`}>
@@ -338,6 +384,16 @@ export default function GameScreen({
             <div className="phase-emoji">🎊</div>
             <h2 className="game-over-title">Game Over!</h2>
             <p className="phase-sub">Final Scoreboard — {gameState.totalRounds} Rounds</p>
+
+            {/* 😭 Grand loser reaction */}
+            {!iWon && (
+              <LoserReaction
+                rank={[...players].sort((a, b) => b.score - a.score).findIndex(p => p.id === myId)}
+                winnerName={[...players].sort((a, b) => b.score - a.score)[0]?.name ?? ''}
+                visible={showLoserReaction}
+              />
+            )}
+
             <div className="scores-list final">
               {[...players].sort((a, b) => b.score - a.score).map((p, i) => (
                 <div key={p.id} className={`score-row final-row rank-${i + 1} ${p.id === myId ? 'me' : ''}`}>

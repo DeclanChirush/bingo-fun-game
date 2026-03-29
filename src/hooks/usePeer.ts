@@ -31,6 +31,8 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
   const [myId, setMyId] = useState('');
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [incomingReaction, setIncomingReaction] = useState<{ emoji: string; name: string; id: number } | null>(null);
+  const reactionCounterRef = useRef(0);
 
   const claimedRef = useRef(false);
   const peerRef = useRef<Peer | null>(null);
@@ -140,6 +142,14 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
         isRejectedRef.current = true;
         setRejectReason(msg.payload.reason);
         setStatus('rejected');
+        break;
+
+      case 'EMOJI_REACT':
+        setIncomingReaction({
+          emoji: msg.payload.emoji,
+          name: msg.payload.playerName,
+          id: ++reactionCounterRef.current,
+        });
         break;
     }
   };
@@ -253,5 +263,10 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { status, myId, gameState, rejectReason, actions: { callNumber, claimBingo } };
+  const sendEmojiReact = useCallback((emoji: string) => {
+    const id = myId || peerRef.current?.id || '';
+    send({ type: 'EMOJI_REACT', payload: { emoji, playerId: id, playerName } });
+  }, [send, myId, playerName]);
+
+  return { status, myId, gameState, rejectReason, incomingReaction, actions: { callNumber, claimBingo, sendEmojiReact } };
 }

@@ -51,6 +51,11 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   const [peerReady, setPeerReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
+  const [incomingReaction, setIncomingReaction] = useState<{ emoji: string; name: string; id: number } | null>(null);
+  const reactionCounterRef = useRef(0);
+  const onEmojiReact = (emoji: string, name: string) => {
+    setIncomingReaction({ emoji, name, id: ++reactionCounterRef.current });
+  };
 
   const peerRef = useRef<Peer | null>(null);
   const connsRef = useRef<Map<string, DataConnection>>(new Map());
@@ -266,6 +271,13 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     if (msg.type === 'CLAIM_BINGO') {
       queueBingoClaim(msg.payload.playerId, msg.payload.playerName);
     }
+
+    if (msg.type === 'EMOJI_REACT') {
+      // Broadcast to all other peers so everyone sees it
+      broadcast({ type: 'EMOJI_REACT', payload: msg.payload });
+      // Also bubble up to host's own UI
+      onEmojiReact?.(msg.payload.emoji, msg.payload.playerName);
+    }
   };
 
   // ── Host-side actions ────────────────────────────────────
@@ -384,12 +396,21 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const sendEmojiReact = (emoji: string) => {
+    const hostId = peerRef.current?.id ?? '';
+    const gs = gsRef.current;
+    const name = gs?.players.find(p => p.id === hostId)?.name ?? hostName;
+    broadcast({ type: 'EMOJI_REACT', payload: { emoji, playerId: hostId, playerName: name } });
+    onEmojiReact(emoji, name);
+  };
+
   return {
     roomCode,
     peerReady,
     error,
     gameState,
     myId: peerRef.current?.id ?? '',
-    actions: { startGame, nextRound, resetGame, hostCallNumber, hostClaimBingo },
+    incomingReaction,
+    actions: { startGame, nextRound, resetGame, hostCallNumber, hostClaimBingo, sendEmojiReact },
   };
 }

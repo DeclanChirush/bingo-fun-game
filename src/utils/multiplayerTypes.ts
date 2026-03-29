@@ -51,11 +51,13 @@ export type HostMsg =
   | { type: 'GAME_OVER'; payload: { scores: Record<string, number> } }
   | { type: 'GAME_RESET'; payload: Record<string, never> }
   | { type: 'JOIN_REJECTED'; payload: { reason: string } }
-  | { type: 'PING'; payload: { ts: number } };  // FIX #4: heartbeat
+  | { type: 'PING'; payload: { ts: number } }  // FIX #4: heartbeat
+  | { type: 'EMOJI_REACT'; payload: { emoji: string; playerId: string; playerName: string } };
 
 // Peer → host
 export type PeerMsg =
   | { type: 'JOIN_REQUEST'; payload: { name: string } }
   | { type: 'CALL_NUMBER'; payload: { number: number; callerId: string } }
   | { type: 'CLAIM_BINGO'; payload: { playerId: string; playerName: string } }
-  | { type: 'PONG'; payload: { ts: number } };  // FIX #4: heartbeat reply
+  | { type: 'PONG'; payload: { ts: number } }  // FIX #4: heartbeat reply
+  | { type: 'EMOJI_REACT'; payload: { emoji: string; playerId: string; playerName: string } };
