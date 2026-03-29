@@ -11,8 +11,8 @@ interface Props {
   disabled: boolean;
   onRefresh?: () => void;
   showRefresh?: boolean;
-  // Inline picking props (replaces NumberPicker panel)
   isMyTurn?: boolean;
+  canPick?: boolean;          // FIX #1: separate from isMyTurn — true only when hasn't picked yet
   onPickNumber?: (n: number) => void;
   currentCallerName?: string;
 }
@@ -37,7 +37,6 @@ function DiagLine({ type }: { type: 0 | 1 }) {
   );
 }
 
-// Memoized cell to avoid re-rendering every cell when only one changes
 const BingoCell = memo(function BingoCell({
   num, isCrossed, isCalled, isLast, onLine, isWrong, isPickMode, disabled,
   onClick,
@@ -54,12 +53,12 @@ const BingoCell = memo(function BingoCell({
 }) {
   const classes = [
     'bingo-cell',
-    isCrossed                          ? 'crossed'     : '',
-    onLine                             ? 'on-line'     : '',
-    isLast && !isCrossed               ? 'last-called' : '',
-    isCalled && !isCrossed             ? 'callable'    : '',
-    isWrong                            ? 'wrong-flash' : '',
-    isPickMode && !isCalled            ? 'pick-mode'   : '',
+    isCrossed                       ? 'crossed'     : '',
+    onLine                          ? 'on-line'     : '',
+    isLast && !isCrossed            ? 'last-called' : '',
+    isCalled && !isCrossed          ? 'callable'    : '',
+    isWrong                         ? 'wrong-flash' : '',
+    isPickMode && !isCalled         ? 'pick-mode'   : '',
   ].filter(Boolean).join(' ');
 
   return (
@@ -82,26 +81,26 @@ const BingoCell = memo(function BingoCell({
 export default function BingoCard({
   card, lastCalledNumber, calledNumbers, onCross, disabled,
   onRefresh, showRefresh,
-  isMyTurn = false, onPickNumber, currentCallerName,
+  isMyTurn = false, canPick = false, onPickNumber, currentCallerName,
 }: Props) {
   const [wrongCell, setWrongCell] = useState<[number, number] | null>(null);
 
   const diag0Done = card.completedLines.some(l => l.type === 'diag' && l.index === 0);
   const diag1Done = card.completedLines.some(l => l.type === 'diag' && l.index === 1);
 
-  // Are we in "pick mode" — my turn to call a number from the grid?
-  const isPickMode = !!onPickNumber && isMyTurn;
+  // FIX #1: Pick mode is only active when canPick=true (turn is mine AND haven't picked yet)
+  const isPickMode = !!onPickNumber && canPick;
 
   const handleCellClick = (row: number, col: number) => {
     const num = card.numbers[row][col];
 
-    // Pick mode: caller taps any uncalled cell to broadcast that number
+    // Pick mode: tap any uncalled number to broadcast it
     if (isPickMode && !calledNumbers.has(num)) {
       onPickNumber!(num);
       return;
     }
 
-    // Normal cross mode: mark a called number on your card
+    // Normal cross mode
     if (disabled) return;
     if (card.crossed[row][col]) return;
     if (!calledNumbers.has(num)) {
@@ -128,16 +127,18 @@ export default function BingoCard({
         ))}
       </div>
 
-      {/* Pick mode banner */}
-      {onPickNumber && (
-        <div className={`pick-banner ${isMyTurn ? 'pick-banner-active' : 'pick-banner-waiting'}`}>
-          {isMyTurn ? (
+      {/* Turn banner — only shown during gameplay */}
+      {onPickNumber !== undefined || isMyTurn ? (
+        <div className={`pick-banner ${isPickMode ? 'pick-banner-active' : isMyTurn && !canPick ? 'pick-banner-waiting-turn' : 'pick-banner-waiting'}`}>
+          {isPickMode ? (
             <span>🎯 <strong>Your turn!</strong> Tap any number to call it</span>
+          ) : isMyTurn && !canPick ? (
+            <span>✅ Number called! Cross off your card then wait for your next turn</span>
           ) : (
             <span>⏳ <strong>{currentCallerName}</strong> is picking…</span>
           )}
         </div>
-      )}
+      ) : null}
 
       {/* Refresh button (lobby only) */}
       {showRefresh && onRefresh && (
@@ -146,7 +147,7 @@ export default function BingoCard({
         </button>
       )}
 
-      {/* 5×5 grid with SVG diagonal overlay */}
+      {/* 5×5 grid */}
       <div className="grid-wrapper">
         <div className="bingo-grid">
           {card.numbers.map((row, rIdx) =>
@@ -157,11 +158,9 @@ export default function BingoCard({
               const onLine = cellOnCompletedLine(card.completedLines, rIdx, cIdx);
               const isWrong = wrongCell?.[0] === rIdx && wrongCell?.[1] === cIdx;
 
-              // In pick mode: uncalled = pickable, called = already used
-              // In normal mode: called & not crossed = clickable, else disabled
               let cellDisabled: boolean;
               if (isPickMode) {
-                cellDisabled = isCalled; // already called numbers can't be picked again
+                cellDisabled = isCalled; // can't pick already-called numbers
               } else {
                 cellDisabled = disabled || isCrossed || !isCalled;
               }
@@ -183,18 +182,14 @@ export default function BingoCard({
             })
           )}
 
-          {/* Row strikethroughs */}
           {card.completedLines.filter(l => l.type === 'row').map(l => (
             <div key={`row-${l.index}`} className="row-strike" style={{ '--ri': l.index } as React.CSSProperties} />
           ))}
-
-          {/* Col strikethroughs */}
           {card.completedLines.filter(l => l.type === 'col').map(l => (
             <div key={`col-${l.index}`} className="col-strike" style={{ '--ci': l.index } as React.CSSProperties} />
           ))}
         </div>
 
-        {/* SVG overlay for diagonal lines */}
         {(diag0Done || diag1Done) && (
           <svg className="diag-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
             <defs>

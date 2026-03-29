@@ -38,10 +38,14 @@ export default function GameScreen({
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Track the last round+phase we started so we know when a genuinely new round begins
   const lastRoundStartedRef = useRef<number>(0);
   const prevCalledRef = useRef<number[]>([]);
   const claimedRef = useRef(false);
+
+  // BUG FIX #1: Lock after calling one number until callerIndex changes back to us
+  // This prevents a player from tapping multiple numbers in a single turn
+  const hasCalledThisTurnRef = useRef(false);
+  const prevCallerIndexRef = useRef<number>(-1);
 
   const { phase, round, players, callerOrder, callerIndex, calledNumbers, roundWinner } = gameState;
 
@@ -55,16 +59,25 @@ export default function GameScreen({
   const iWon = roundWinner === myId;
   const hasWon = useMemo(() => isFullBingo(card), [card]);
 
+  // BUG FIX #1: Detect when callerIndex changes — reset the per-turn call lock
+  useEffect(() => {
+    if (phase !== 'playing') return;
+    if (callerIndex !== prevCallerIndexRef.current) {
+      prevCallerIndexRef.current = callerIndex;
+      hasCalledThisTurnRef.current = false; // new caller — reset lock
+    }
+  }, [callerIndex, phase]);
+
   // ── Reset card when a new round starts ───────────────────────
   useEffect(() => {
     if (phase === 'playing' && round !== lastRoundStartedRef.current) {
-      // This is a genuinely new round
       lastRoundStartedRef.current = round;
       claimedRef.current = false;
+      hasCalledThisTurnRef.current = false;
+      prevCallerIndexRef.current = -1;
       setWonRound(false);
       setConfetti(false);
       prevCalledRef.current = [];
-      // Always generate a fresh card for every round
       setCard(generateCard());
     }
   }, [phase, round]);
@@ -101,9 +114,11 @@ export default function GameScreen({
     else if (phase === 'round_end' || phase === 'game_over') setConfetti(false);
   }, [phase, iWon]);
 
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showToast = useCallback((msg: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast(msg);
-    setTimeout(() => setToast(null), 2800);
+    toastTimerRef.current = setTimeout(() => setToast(null), 2800);
   }, []);
 
   const handleCellCross = useCallback((row: number, col: number) => {
@@ -114,10 +129,13 @@ export default function GameScreen({
     if (soundEnabled) playMark();
   }, [card, calledSet, soundEnabled, showToast]);
 
-  // Caller taps their own card to call a number
+  // BUG FIX #1: Enforce one-number-per-turn. Lock immediately on tap,
+  // only unlock when callerIndex increments (detected in the useEffect above).
   const handlePickNumber = useCallback((num: number) => {
+    if (hasCalledThisTurnRef.current) return; // already called this turn — ignore
+    hasCalledThisTurnRef.current = true;       // lock immediately
     resumeAudio();
-    // Optimistic local update
+    // Optimistic local card update
     setCard(prev => applyNumber(prev, num));
     prevCalledRef.current = [num, ...prevCalledRef.current];
     onCallNumber(num);
@@ -134,6 +152,9 @@ export default function GameScreen({
       setTimeout(() => setCopied(false), 2000);
     });
   };
+
+  // Whether this player can still pick (their turn AND haven't called yet this turn)
+  const canPick = isMyTurn && !hasCalledThisTurnRef.current;
 
   return (
     <div className="game-screen">
@@ -227,10 +248,17 @@ export default function GameScreen({
           <div className="left-panel">
             <div className={`caller-banner ${isMyTurn ? 'my-turn-banner' : ''}`}>
               {isMyTurn ? (
-                <>
-                  <span className="cb-emoji">🎯</span>
-                  <span className="cb-text">Tap a number on your card to call it!</span>
-                </>
+                canPick ? (
+                  <>
+                    <span className="cb-emoji">🎯</span>
+                    <span className="cb-text">Tap a number on your card to call it!</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="cb-emoji">⏳</span>
+                    <span className="cb-text">Number called! Wait for next turn…</span>
+                  </>
+                )
               ) : (
                 <>
                   <span className="cb-emoji">🎲</span>
@@ -259,7 +287,8 @@ export default function GameScreen({
               onCross={handleCellCross}
               disabled={wonRound}
               isMyTurn={isMyTurn}
-              onPickNumber={isMyTurn ? handlePickNumber : undefined}
+              canPick={canPick}
+              onPickNumber={canPick ? handlePickNumber : undefined}
               currentCallerName={currentCallerName}
             />
             {me && (
@@ -306,7 +335,7 @@ export default function GameScreen({
       {phase === 'game_over' && (
         <div className="phase-overlay">
           <div className="phase-card">
-            <div className="phase-emoji bounce">🎊</div>
+            <div className="phase-emoji">🎊</div>
             <h2 className="game-over-title">Game Over!</h2>
             <p className="phase-sub">Final Scoreboard — {gameState.totalRounds} Rounds</p>
             <div className="scores-list final">
