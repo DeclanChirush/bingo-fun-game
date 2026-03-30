@@ -8,7 +8,7 @@ import Confetti from './Confetti';
 import LoserReaction from './LoserReaction';
 import EmojiReactions from './EmojiReactions';
 import SuspenseReveal from './SuspenseReveal';
-import { playMark, playWin, playLoserSound, playSuspense, resumeAudio } from '../utils/sounds';
+import { playMark, playWin, playLoserSound, playSuspense, resumeAudio, playMySound, playClick } from '../utils/sounds';
 import './GameScreen.css';
 
 interface Props {
@@ -100,7 +100,7 @@ export default function GameScreen({
     // Trigger suspense reveal for the newest number (first in array = latest)
     if (newNums.length > 0) {
       setSuspenseNumber(calledNumbers[0]);
-      if (soundEnabled) playSuspense();
+      if (soundEnabled) playClick();
     }
     setCard(prevCard => {
       let updated = prevCard;
@@ -129,7 +129,7 @@ export default function GameScreen({
     } else if (phase === 'round_end' || phase === 'game_over') {
       setConfetti(false);
       setShowLoserReaction(true);
-      if (soundEnabled) setTimeout(() => playLoserSound(), 400);
+      if (soundEnabled) setTimeout(() => playMySound(), 400);
     }
     if (phase === 'playing') {
       setShowLoserReaction(false);
@@ -183,6 +183,14 @@ export default function GameScreen({
       <Confetti active={confetti} />
       {showQuit && <QuitModal onConfirm={onQuit} onCancel={() => setShowQuit(false)} />}
       {toast && <div className="toast">{toast}</div>}
+
+      {/* 🎲 Suspense reveal — fixed overlay, never affects layout */}
+      {/* {phase === 'playing' && (
+        <SuspenseReveal
+          number={suspenseNumber}
+          callerName={currentCallerName}
+        />
+      )} */}
 
       {/* ── Top bar ── */}
       <div className="top-bar">
@@ -301,21 +309,15 @@ export default function GameScreen({
             </div>
 
             {/* 🎉 Emoji Reactions */}
-            {onSendReaction && (
+            {/* {onSendReaction && (
               <EmojiReactions
                 onSendReaction={onSendReaction}
                 incomingReaction={incomingReaction ?? null}
               />
-            )}
+            )} */}
           </div>
 
           <div className="right-panel">
-            {/* 🎲 Suspense number reveal */}
-            <SuspenseReveal
-              number={suspenseNumber}
-              callerName={currentCallerName}
-            />
-
             <BingoCard
               card={card}
               lastCalledNumber={lastCalled}

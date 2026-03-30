@@ -128,7 +128,7 @@ export default function BingoCard({
       </div>
 
       {/* Turn banner — only shown during gameplay */}
-      {onPickNumber !== undefined || isMyTurn ? (
+      {/* {onPickNumber !== undefined || isMyTurn ? (
         <div className={`pick-banner ${isPickMode ? 'pick-banner-active' : isMyTurn && !canPick ? 'pick-banner-waiting-turn' : 'pick-banner-waiting'}`}>
           {isPickMode ? (
             <span>🎯 <strong>Your turn!</strong> Tap any number to call it</span>
@@ -138,7 +138,7 @@ export default function BingoCard({
             <span>⏳ <strong>{currentCallerName}</strong> is picking…</span>
           )}
         </div>
-      ) : null}
+      ) : null} */}
 
       {/* Refresh button (lobby only) */}
       {showRefresh && onRefresh && (

@@ -164,8 +164,21 @@ export function playSuspense() {
 }
 
 // Pick a random loser sound
+// const LOSER_SOUNDS = [playSadTrombone, playCrowdLaugh, playDramaticSting];
 const LOSER_SOUNDS = [playSadTrombone, playCrowdLaugh, playDramaticSting];
 export function playLoserSound() {
   const fn = LOSER_SOUNDS[Math.floor(Math.random() * LOSER_SOUNDS.length)];
   fn();
+}
+
+// Cache the Audio object so it loads once
+let mySoundAudio: HTMLAudioElement | null = null;
+
+export function playMySound(volume = 1.0) {
+  if (!mySoundAudio) {
+    mySoundAudio = new Audio('/sounds/faaah.mp3');
+  }
+  mySoundAudio.volume = volume;
+  mySoundAudio.currentTime = 0; // rewind if already played
+  mySoundAudio.play().catch(() => {}); // catch autoplay block silently
 }
