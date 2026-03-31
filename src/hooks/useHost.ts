@@ -53,8 +53,17 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [incomingReaction, setIncomingReaction] = useState<{ emoji: string; name: string; id: number } | null>(null);
   const reactionCounterRef = useRef(0);
+  const reactionLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [reactionLocked, setReactionLocked] = useState(false);
+
+  const REACTION_LOCK_MS = 4000;
+
   const onEmojiReact = (emoji: string, name: string) => {
     setIncomingReaction({ emoji, name, id: ++reactionCounterRef.current });
+    // Lock host's own buttons
+    if (reactionLockTimerRef.current) clearTimeout(reactionLockTimerRef.current);
+    setReactionLocked(true);
+    reactionLockTimerRef.current = setTimeout(() => setReactionLocked(false), REACTION_LOCK_MS);
   };
 
   const peerRef = useRef<Peer | null>(null);
@@ -275,6 +284,8 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     if (msg.type === 'EMOJI_REACT') {
       // Broadcast to all other peers so everyone sees it
       broadcast({ type: 'EMOJI_REACT', payload: msg.payload });
+      // Lock all players' reaction buttons for the sound duration
+      broadcast({ type: 'REACTION_LOCK', payload: { durationMs: REACTION_LOCK_MS } });
       // Also bubble up to host's own UI
       onEmojiReact?.(msg.payload.emoji, msg.payload.playerName);
     }
@@ -401,6 +412,7 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     const gs = gsRef.current;
     const name = gs?.players.find(p => p.id === hostId)?.name ?? hostName;
     broadcast({ type: 'EMOJI_REACT', payload: { emoji, playerId: hostId, playerName: name } });
+    broadcast({ type: 'REACTION_LOCK', payload: { durationMs: REACTION_LOCK_MS } });
     onEmojiReact(emoji, name);
   };
 
@@ -411,6 +423,7 @@ export function useHost(hostName: string, soundEnabled: boolean, totalRounds: nu
     gameState,
     myId: peerRef.current?.id ?? '',
     incomingReaction,
+    reactionLocked,
     actions: { startGame, nextRound, resetGame, hostCallNumber, hostClaimBingo, sendEmojiReact },
   };
 }

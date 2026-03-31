@@ -33,6 +33,8 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
   const [rejectReason, setRejectReason] = useState('');
   const [incomingReaction, setIncomingReaction] = useState<{ emoji: string; name: string; id: number } | null>(null);
   const reactionCounterRef = useRef(0);
+  const [reactionLocked, setReactionLocked] = useState(false);
+  const reactionLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const claimedRef = useRef(false);
   const peerRef = useRef<Peer | null>(null);
@@ -151,6 +153,15 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
           id: ++reactionCounterRef.current,
         });
         break;
+
+      case 'REACTION_LOCK':
+        if (reactionLockTimerRef.current) clearTimeout(reactionLockTimerRef.current);
+        setReactionLocked(true);
+        reactionLockTimerRef.current = setTimeout(
+          () => setReactionLocked(false),
+          msg.payload.durationMs
+        );
+        break;
     }
   };
 
@@ -268,5 +279,5 @@ export function usePeer(roomCode: string, playerName: string, soundEnabled: bool
     send({ type: 'EMOJI_REACT', payload: { emoji, playerId: id, playerName } });
   }, [send, myId, playerName]);
 
-  return { status, myId, gameState, rejectReason, incomingReaction, actions: { callNumber, claimBingo, sendEmojiReact } };
+  return { status, myId, gameState, rejectReason, incomingReaction, reactionLocked, actions: { callNumber, claimBingo, sendEmojiReact } };
 }

@@ -8,7 +8,7 @@ import Confetti from './Confetti';
 import LoserReaction from './LoserReaction';
 import EmojiReactions from './EmojiReactions';
 import SuspenseReveal from './SuspenseReveal';
-import { playMark, playWin, playLoserSound, playSuspense, resumeAudio, playMySound, playClick } from '../utils/sounds';
+import { playMark, playWin, playLoserSound, playSuspense, resumeAudio, playFaaah, playClick } from '../utils/sounds';
 import './GameScreen.css';
 
 interface Props {
@@ -29,13 +29,14 @@ interface Props {
   onSetTotalRounds?: (n: number) => void;
   onSendReaction?: (emoji: string) => void;
   incomingReaction?: { emoji: string; name: string; id: number } | null;
+  reactionLocked?: boolean;
 }
 
 export default function GameScreen({
   myId, playerName, roomCode, isHost, gameState, soundEnabled,
   onToggleSound, onQuit, onCallNumber, onClaimBingo,
   onStartGame, onNextRound, onResetGame, totalRounds = 5, onSetTotalRounds,
-  onSendReaction, incomingReaction,
+  onSendReaction, incomingReaction, reactionLocked,
 }: Props) {
   const [card, setCard] = useState<CardState>(() => generateCard());
   const [showQuit, setShowQuit] = useState(false);
@@ -129,7 +130,7 @@ export default function GameScreen({
     } else if (phase === 'round_end' || phase === 'game_over') {
       setConfetti(false);
       setShowLoserReaction(true);
-      if (soundEnabled) setTimeout(() => playMySound(), 400);
+      if (soundEnabled) setTimeout(() => playFaaah(), 400);
     }
     if (phase === 'playing') {
       setShowLoserReaction(false);
@@ -309,12 +310,13 @@ export default function GameScreen({
             </div>
 
             {/* 🎉 Emoji Reactions */}
-            {/* {onSendReaction && (
+            {onSendReaction && (
               <EmojiReactions
                 onSendReaction={onSendReaction}
                 incomingReaction={incomingReaction ?? null}
+                reactionLocked={reactionLocked ?? false}
               />
-            )} */}
+            )}
           </div>
 
           <div className="right-panel">
