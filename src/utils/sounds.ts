@@ -171,14 +171,66 @@ export function playLoserSound() {
   fn();
 }
 
-// Cache the Audio object so it loads once
-let mySoundAudio: HTMLAudioElement | null = null;
+// Per-sound Audio cache — each sound has its own pre-loaded HTMLAudioElement.
+// cloneNode(true) is used for playback so the sound fires instantly without
+// seeking or reloading (eliminates the delay on first/repeat plays).
+// function makeMp3Player(src: string) {
+//   const master = new Audio(src);
+//   master.preload = 'auto';
+//   // Kick off the load immediately so the browser buffers it
+//   master.load();
+//   return (volume = 1.0) => {
+//     const clone = master.cloneNode(true) as HTMLAudioElement;
+//     clone.volume = volume;
+//     clone.play().catch(() => {});
+//   };
+// }
 
-export function playMySound(volume = 1.0) {
-  if (!mySoundAudio) {
-    mySoundAudio = new Audio('/sounds/faaah.mp3');
+// Pool-based mp3 player.
+// cloneNode only copies the DOM element, NOT the decoded audio buffer, so
+// clones of not-yet-loaded audio play silence — which is why larger files like
+// amoung-us.mp3 and sa.mp3 were silent. Instead we fetch each file as a Blob
+// URL so the browser fully buffers it, then keep a small pool of Audio
+// instances ready for zero-delay playback.
+function makeMp3Player(src: string) {
+  const POOL_SIZE = 3;
+  const pool: HTMLAudioElement[] = [];
+  let poolReady = false;
+
+  function buildPool(url: string) {
+    for (let i = 0; i < POOL_SIZE; i++) {
+      const audio = new Audio(url);
+      audio.preload = 'auto';
+      pool.push(audio);
+    }
+    poolReady = true;
   }
-  mySoundAudio.volume = volume;
-  mySoundAudio.currentTime = 0; // rewind if already played
-  mySoundAudio.play().catch(() => {}); // catch autoplay block silently
+
+  // Fetch and convert to a Blob URL so the browser fully decodes the file
+  fetch(src)
+    .then(r => r.blob())
+    .then(blob => buildPool(URL.createObjectURL(blob)))
+    .catch(() => buildPool(src)); // fallback if fetch fails
+
+  return (volume = 1.0) => {
+    if (!poolReady) return;
+    // Pick an idle instance, or fall back to the first one
+    const audio = pool.find(a => a.paused || a.ended) ?? pool[0];
+    audio.volume = volume;
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+  };
 }
+
+export const playFaaah        = makeMp3Player('/sounds/faaah.mp3');
+export const playSadViolin    = makeMp3Player('/sounds/sad-violin.mp3');
+export const playAmoungUs     = makeMp3Player('/sounds/amoung-us.mp3');
+export const playEmotionalDamage = makeMp3Player('/sounds/emotional-damage.mp3');
+export const playSpiderMan    = makeMp3Player('/sounds/spiderman.mp3');
+export const playMemeFinal    = makeMp3Player('/sounds/meme-final.mp3');
+export const playWow          = makeMp3Player('/sounds/wow.mp3');
+export const playSuspicious   = makeMp3Player('/sounds/suspicious.mp3');
+export const playManSnoring   = makeMp3Player('/sounds/man-snoring.mp3');
+export const playOMG          = makeMp3Player('/sounds/omg.mp3');
+export const playOMGHellNah   = makeMp3Player('/sounds/omg-hell-nah.mp3');
+export const playEndCareer    = makeMp3Player('/sounds/end-career.mp3');

@@ -52,7 +52,8 @@ export type HostMsg =
   | { type: 'GAME_RESET'; payload: Record<string, never> }
   | { type: 'JOIN_REJECTED'; payload: { reason: string } }
   | { type: 'PING'; payload: { ts: number } }  // FIX #4: heartbeat
-  | { type: 'EMOJI_REACT'; payload: { emoji: string; playerId: string; playerName: string } };
+  | { type: 'EMOJI_REACT'; payload: { emoji: string; playerId: string; playerName: string } }
+  | { type: 'REACTION_LOCK'; payload: { durationMs: number } };
 
 // Peer → host
 export type PeerMsg =
