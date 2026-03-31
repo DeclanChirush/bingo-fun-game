@@ -72,9 +72,19 @@ export function playClick() {
   playTone(800, 'square', 0.05, 0.2, now, ctx);
 }
 
+// Registry of all tryDecode functions so resumeAudio can trigger them
+// after the AudioContext is unlocked by the first user gesture.
+const _decodeQueue: Array<() => void> = [];
+
 export function resumeAudio() {
   if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume();
+    audioCtx.resume().then(() => {
+      // Context just unlocked — flush any pending decodes
+      _decodeQueue.forEach(fn => fn());
+    });
+  } else {
+    // Context already running — flush immediately
+    _decodeQueue.forEach(fn => fn());
   }
 }
 
@@ -164,73 +174,92 @@ export function playSuspense() {
 }
 
 // Pick a random loser sound
-// const LOSER_SOUNDS = [playSadTrombone, playCrowdLaugh, playDramaticSting];
 const LOSER_SOUNDS = [playSadTrombone, playCrowdLaugh, playDramaticSting];
 export function playLoserSound() {
   const fn = LOSER_SOUNDS[Math.floor(Math.random() * LOSER_SOUNDS.length)];
   fn();
 }
 
-// Per-sound Audio cache — each sound has its own pre-loaded HTMLAudioElement.
-// cloneNode(true) is used for playback so the sound fires instantly without
-// seeking or reloading (eliminates the delay on first/repeat plays).
-// function makeMp3Player(src: string) {
-//   const master = new Audio(src);
-//   master.preload = 'auto';
-//   // Kick off the load immediately so the browser buffers it
-//   master.load();
-//   return (volume = 1.0) => {
-//     const clone = master.cloneNode(true) as HTMLAudioElement;
-//     clone.volume = volume;
-//     clone.play().catch(() => {});
-//   };
-// }
+// ── AudioBuffer-based mp3 player ────────────────────────────────────────────
+//
+// Why not HTMLAudioElement (the previous approach):
+//   - cloneNode copies DOM state, NOT decoded PCM → clones of unloaded audio
+//     play silence. Larger files (sa.mp3, amoung-us.mp3) weren't buffered yet.
+//   - HTMLAudioElement creates a full OS media pipeline per instance — very
+//     heavy on mobile, causes heat + RAM pressure.
+//   - currentTime = 0 stalls briefly on Android Chrome under memory pressure.
+//
+// AudioContext + AudioBuffer:
+//   - fetch → decodeAudioData ONCE → raw PCM lives in one AudioBuffer (~2-4 MB
+//     total for all 12 sounds vs ~36 media pipelines before).
+//   - Each play() creates a BufferSourceNode: lightweight (~1 KB), no DOM,
+//     hardware-accelerated, instant start. Single-use by spec — correct pattern.
+//   - All 12 sounds share the single AudioContext already used by the game.
+//   - Zero latency, works identically on iOS Safari, Android Chrome, desktop.
+//
+// Loading strategy:
+//   - fetch starts immediately at module load (browser caches the network req).
+//   - decodeAudioData is deferred until the first user gesture via getCtx(),
+//     because AudioContext requires user interaction on mobile before it unlocks.
+//   - If the context is still suspended at module load time, we retry decode
+//     after resumeAudio() unlocks it (called on every user interaction already).
 
-// Pool-based mp3 player.
-// cloneNode only copies the DOM element, NOT the decoded audio buffer, so
-// clones of not-yet-loaded audio play silence — which is why larger files like
-// amoung-us.mp3 and sa.mp3 were silent. Instead we fetch each file as a Blob
-// URL so the browser fully buffers it, then keep a small pool of Audio
-// instances ready for zero-delay playback.
 function makeMp3Player(src: string) {
-  const POOL_SIZE = 3;
-  const pool: HTMLAudioElement[] = [];
-  let poolReady = false;
+  let buffer: AudioBuffer | null = null;
+  let arrayBuf: ArrayBuffer | null = null;
+  let decoding = false;
 
-  function buildPool(url: string) {
-    for (let i = 0; i < POOL_SIZE; i++) {
-      const audio = new Audio(url);
-      audio.preload = 'auto';
-      pool.push(audio);
-    }
-    poolReady = true;
+  // Step 1: fetch the raw bytes immediately (no AudioContext needed yet)
+  fetch(src)
+    .then(r => r.arrayBuffer())
+    .then(ab => {
+      arrayBuf = ab;
+      tryDecode();
+    })
+    .catch(() => {}); // missing file — silently skip
+
+  // Step 2: decode into AudioBuffer once we have bytes AND a running context
+  function tryDecode() {
+    if (buffer || decoding || !arrayBuf) return;
+    const ctx = getCtx();
+    if (ctx.state === 'suspended') return; // wait for user gesture
+    decoding = true;
+    // decodeAudioData detaches the ArrayBuffer, so we must slice a copy
+    ctx.decodeAudioData(arrayBuf.slice(0), decoded => {
+      buffer = decoded;
+      arrayBuf = null; // free the raw bytes — buffer holds the PCM now
+      decoding = false;
+    }, () => { decoding = false; });
   }
 
-  // Fetch and convert to a Blob URL so the browser fully decodes the file
-  fetch(src)
-    .then(r => r.blob())
-    .then(blob => buildPool(URL.createObjectURL(blob)))
-    .catch(() => buildPool(src)); // fallback if fetch fails
+  // Register so resumeAudio() can trigger decode after context unlocks
+  _decodeQueue.push(tryDecode);
 
   return (volume = 1.0) => {
-    if (!poolReady) return;
-    // Pick an idle instance, or fall back to the first one
-    const audio = pool.find(a => a.paused || a.ended) ?? pool[0];
-    audio.volume = volume;
-    audio.currentTime = 0;
-    audio.play().catch(() => {});
+    // If context just got unlocked (first tap), try to finish decoding now
+    tryDecode();
+    if (!buffer) return; // still loading
+    const ctx = getCtx();
+    const source = ctx.createBufferSource();
+    const gain = ctx.createGain();
+    source.buffer = buffer;
+    gain.gain.value = volume;
+    source.connect(gain);
+    gain.connect(ctx.destination);
+    source.start(0);
+    // BufferSourceNode auto-disconnects when done — no manual cleanup needed
   };
 }
 
-export const playFaaah        = makeMp3Player('/sounds/faaah.mp3');
-export const playSadViolin    = makeMp3Player('/sounds/sad-violin.mp3');
-export const playAmoungUs     = makeMp3Player('/sounds/amoung-us.mp3');
+export const playFaaah           = makeMp3Player('/sounds/faaah.mp3');
+export const playSadViolin       = makeMp3Player('/sounds/sad-violin.mp3');
+export const playAmoungUs        = makeMp3Player('/sounds/amoung-us.mp3');
 export const playEmotionalDamage = makeMp3Player('/sounds/emotional-damage.mp3');
-export const playSpiderMan    = makeMp3Player('/sounds/spiderman.mp3');
-export const playMemeFinal    = makeMp3Player('/sounds/meme-final.mp3');
-export const playWow          = makeMp3Player('/sounds/wow.mp3');
-export const playSuspicious   = makeMp3Player('/sounds/suspicious.mp3');
-export const playManSnoring   = makeMp3Player('/sounds/man-snoring.mp3');
-export const playOMG          = makeMp3Player('/sounds/omg.mp3');
-export const playOMGHellNah   = makeMp3Player('/sounds/omg-hell-nah.mp3');
-export const playEndCareer    = makeMp3Player('/sounds/end-career.mp3');
+export const playSpiderMan       = makeMp3Player('/sounds/spiderman.mp3');
+export const playMemeFinal       = makeMp3Player('/sounds/meme-final.mp3');
+export const playWow             = makeMp3Player('/sounds/wow.mp3');
+export const playSuspicious      = makeMp3Player('/sounds/suspicious.mp3');
+export const playManSnoring      = makeMp3Player('/sounds/man-snoring.mp3');
+export const playOMG             = makeMp3Player('/sounds/omg.mp3');
+export const playOMGHellNah      = makeMp3Player('/sounds/omg-hell-nah.mp3');
+export const playEndCareer       = makeMp3Player('/sounds/end-career.mp3');

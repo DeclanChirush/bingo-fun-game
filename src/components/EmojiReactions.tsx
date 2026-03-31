@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import './EmojiReactions.css';
 import {
   playFaaah,
@@ -34,10 +34,6 @@ const REACTIONS: { emoji: string; sound: () => void; label: string }[] = [
 // Lookup: emoji string → sound fn
 const SOUND_MAP = new Map(REACTIONS.map(r => [r.emoji, r.sound]));
 
-function playReactionSound(emoji: string) {
-  SOUND_MAP.get(emoji)?.();
-}
-
 interface FloatingEmoji {
   id: number;
   emoji: string;
@@ -47,7 +43,7 @@ interface FloatingEmoji {
 interface Props {
   onSendReaction: (emoji: string) => void;
   incomingReaction: { emoji: string; name: string; id: number } | null;
-  reactionLocked: boolean; // global lock — true while a sound is playing for everyone
+  reactionLocked: boolean;
 }
 
 export default function EmojiReactions({ onSendReaction, incomingReaction, reactionLocked }: Props) {
@@ -63,20 +59,24 @@ export default function EmojiReactions({ onSendReaction, incomingReaction, react
     }, 1800);
   }, []);
 
+  // ── Self click ────────────────────────────────────────────
   const handleReact = useCallback((emoji: string) => {
     if (reactionLocked) return;
     spawnFloater(emoji);
-    playReactionSound(emoji); // instant local playback
-    onSendReaction(emoji);    // broadcast via PeerJS → host locks everyone
+    SOUND_MAP.get(emoji)?.();  // play immediately for self — no network round trip
+    onSendReaction(emoji);     // broadcast via PeerJS → host locks everyone
   }, [reactionLocked, spawnFloater, onSendReaction]);
 
-  // Incoming reaction from other players — spawn floater + play sound locally
-  const lastIncoming = useRef<number>(-1);
-  if (incomingReaction && incomingReaction.id !== lastIncoming.current) {
-    lastIncoming.current = incomingReaction.id;
+  // ── Incoming reaction from other players ──────────────────
+  // MUST be in useEffect — triggering audio + state in render body is
+  // unreliable on mobile (React can skip renders or batch them), which
+  // caused sounds to randomly not play on receiving devices.
+  useEffect(() => {
+    if (!incomingReaction) return;
     spawnFloater(incomingReaction.emoji);
-    playReactionSound(incomingReaction.emoji);
-  }
+    SOUND_MAP.get(incomingReaction.emoji)?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incomingReaction?.id]); // fire only when a genuinely new reaction arrives
 
   return (
     <div className="emoji-reactions">
